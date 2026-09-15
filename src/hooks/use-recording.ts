@@ -77,6 +77,28 @@ export function useRecording() {
       if (token === generation.current) { pause(); setError(cause instanceof Error ? cause.message : 'No se pudo iniciar el GPS.'); }
     } finally { busyRef.current = false; setBusy(false); update(); }
   };
-  const finish = () => { stopWatcher(); engine.current.finish(Date.now()); update(); };
+  const finish = async () => {
+    if (busyRef.current || engine.current.status === 'idle' || engine.current.status === 'finished') return;
+    busyRef.current = true;
+    setBusy(true);
+    setError('');
+    stopWatcher();
+    try {
+      const final = await initialPosition();
+      engine.current.finish(Date.now(), {
+        latitude: final.coords.latitude,
+        longitude: final.coords.longitude,
+        accuracy: final.coords.accuracy,
+        timestamp: final.timestamp,
+      });
+    } catch {
+      engine.current.finish(Date.now());
+      setError('La ruta terminó, pero no se pudo obtener una última posición GPS.');
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+      update();
+    }
+  };
   return { track: snapshot.track, busy, error, begin, pause, finish, elapsed: snapshot.elapsed };
 }

@@ -383,7 +383,11 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
         {(active || track.status === 'paused') && <>
         <View style={styles.actions}>
           <SecondaryButton label="Agregar punto" icon="P" flex onPress={() => navigate('point')} />
-          <DangerButton label="Finalizar" onPress={() => { finish(); navigate('finish'); }} />
+          <DangerButton
+            label={busy ? 'Finalizando...' : 'Finalizar'}
+            disabled={busy}
+            onPress={() => void finish().then(() => navigate('finish'))}
+          />
         </View>
         </>}
         <View style={styles.note}>
@@ -846,9 +850,9 @@ function SecondaryButton({ label, icon, flex, onPress }: { label: string; icon?:
   );
 }
 
-function DangerButton({ label, onPress }: { label: string; onPress?: () => void }) {
+function DangerButton({ label, onPress, disabled }: { label: string; onPress?: () => void; disabled?: boolean }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.danger, pressed && styles.pressed]}>
+    <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.danger, disabled && styles.disabled, pressed && styles.pressed]}>
       <View style={styles.stop} />
       <Text selectable style={styles.dangerText}>
         {label}
