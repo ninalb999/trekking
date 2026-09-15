@@ -6,5 +6,8 @@ module.exports = defineConfig([
   expoConfig,
   {
     ignores: ['dist/*', 'supabase/tests/.artifacts/**'],
+    settings: {
+      'import/core-modules': ['leaflet', 'leaflet/dist/leaflet.css', 'geolib'],
+    },
   },
 ]);

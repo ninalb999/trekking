@@ -22,8 +22,17 @@ export function useRecording() {
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [, render] = useState(0);
-  const update = () => render(value => value + 1);
+  const [snapshot, setSnapshot] = useState({
+    track: { points: [] as Recording['points'], distance: 0, status: 'idle' as Recording['status'] },
+    elapsed: 0,
+  });
+  const update = (now = Date.now()) => {
+    const current = engine.current;
+    setSnapshot({
+      track: { points: [...current.points], distance: current.distance, status: current.status },
+      elapsed: current.elapsed(now),
+    });
+  };
   const stopWatcher = () => { generation.current++; watcher.current?.remove(); watcher.current = null; };
   const pause = () => { stopWatcher(); engine.current.pause(Date.now()); update(); };
   useEffect(() => {
@@ -69,5 +78,5 @@ export function useRecording() {
     } finally { busyRef.current = false; setBusy(false); update(); }
   };
   const finish = () => { stopWatcher(); engine.current.finish(Date.now()); update(); };
-  return { track: engine.current, busy, error, begin, pause, finish, elapsed: engine.current.elapsed(Date.now()) };
+  return { track: snapshot.track, busy, error, begin, pause, finish, elapsed: snapshot.elapsed };
 }

@@ -18,17 +18,6 @@ import { getSupabase } from '@/lib/supabase';
 
 type ScreenId = 'home' | 'login' | 'register' | 'routes' | 'record' | 'point' | 'finish' | 'detail';
 
-const SCREENS: { id: ScreenId; title: string; subtitle: string }[] = [
-  { id: 'home', title: 'Explorar rutas', subtitle: 'Inicio' },
-  { id: 'login', title: 'Iniciar sesion', subtitle: 'Acceso' },
-  { id: 'register', title: 'Crear cuenta', subtitle: 'Registro' },
-  { id: 'routes', title: 'Mis rutas', subtitle: 'Listado' },
-  { id: 'record', title: 'Grabando ruta', subtitle: 'GPS activo' },
-  { id: 'point', title: 'Agregar punto', subtitle: 'Parada' },
-  { id: 'finish', title: 'Finalizar ruta', subtitle: 'Guardar' },
-  { id: 'detail', title: 'Detalle ruta', subtitle: 'Ficha' },
-];
-
 const ROUTES = [
   ['Laguna Escondida', 'Andes Explorer', '12.4 km', '5 h 30 min', 'Novato', 'green'],
   ['Cerro Mirador', 'RutaLibre', '8.7 km', '3 h 20 min', 'Intermedio', 'blue'],
