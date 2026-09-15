@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { signUp } from '@/lib/auth';
+import { getSession, signInWithPassword, signOut, signUp } from '@/lib/auth';
+import { getSupabase } from '@/lib/supabase';
 
 type ScreenId = 'home' | 'login' | 'register' | 'routes' | 'record' | 'point' | 'finish' | 'detail';
 
@@ -36,6 +37,7 @@ const ROUTES = [
 export function TrekkingPrototype() {
   const [screen, setCurrentScreen] = useState<ScreenId>('login');
   const [activeTab, setActiveTab] = useState('Inicio');
+  const [authenticated, setAuthenticated] = useState(false);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const phoneWidth = Math.min(width, 430);
@@ -45,6 +47,30 @@ export function TrekkingPrototype() {
     if (next === 'routes') setActiveTab('Mis rutas');
     if (next === 'record' || next === 'point' || next === 'finish') setActiveTab('Grabar');
     setCurrentScreen(next);
+  };
+
+  useEffect(() => {
+    const showHome = () => {
+      setActiveTab('Inicio');
+      setCurrentScreen('home');
+    };
+    const { data: subscription } = getSupabase().auth.onAuthStateChange((event, session) => {
+      setAuthenticated(Boolean(session));
+      if (session) showHome();
+      if (event === 'SIGNED_OUT') setCurrentScreen('login');
+    });
+    getSession().then(({ data }) => {
+      if (data.session) {
+        setAuthenticated(true);
+        showHome();
+      }
+    }).catch(() => {});
+    return () => subscription.subscription.unsubscribe();
+  }, []);
+
+  const logOut = async () => {
+    const { error } = await signOut();
+    if (!error) setScreen('login');
   };
 
   return (
@@ -57,7 +83,7 @@ export function TrekkingPrototype() {
           contentContainerStyle={{ paddingBottom: isAuth ? insets.bottom + 16 : 16 }}
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="never">
-        {screen === 'home' && <HomeScreen navigate={setScreen} />}
+        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} />}
         {screen === 'login' && <LoginScreen navigate={setScreen} />}
         {screen === 'register' && <RegisterScreen navigate={setScreen} />}
         {screen === 'routes' && <MyRoutesScreen navigate={setScreen} />}
@@ -113,12 +139,16 @@ function Hero({ title, subtitle, center }: { title: string; subtitle: string; ce
   );
 }
 
-function HomeScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+function HomeScreen({ navigate, authenticated, onSignOut }: {
+  navigate: (screen: ScreenId) => void;
+  authenticated: boolean;
+  onSignOut: () => void;
+}) {
   return (
     <>
       <Hero title="Rutas de Trekking" subtitle="Explora. Camina. Comparte." />
       <View style={styles.content}>
-        <SecondaryButton label="Iniciar sesion / Crear cuenta" onPress={() => navigate('login')} />
+        <SecondaryButton label={authenticated ? 'Cerrar sesión' : 'Iniciar sesión / Crear cuenta'} onPress={authenticated ? onSignOut : () => navigate('login')} />
         <SearchBox text="Buscar rutas, lugares o creadores..." />
         <View style={styles.rowBetween}>
           <View style={styles.row}>
@@ -149,6 +179,38 @@ function HomeScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
 }
 
 function LoginScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState('');
+
+  const login = async () => {
+    if (loading) return;
+    setFeedback('');
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !password) {
+      setFeedback('Escribe tu correo y contraseña.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data, error } = await signInWithPassword(normalizedEmail, password);
+      if (error) {
+        setFeedback(error.code === 'invalid_credentials'
+          ? 'Correo o contraseña incorrectos.'
+          : error.code === 'email_not_confirmed'
+            ? 'Confirma tu correo antes de ingresar.'
+            : error.message);
+        return;
+      }
+      if (data.session) navigate('home');
+    } catch {
+      setFeedback('No se pudo iniciar sesión. Inténtalo de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       <Hero title="Rutas de Trekking" subtitle="Explora. Camina. Comparte." />
@@ -164,12 +226,13 @@ function LoginScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
         <Text selectable style={styles.authCopy}>
           Continua tu aventura y descubre nuevas rutas
         </Text>
-        <Field icon="M" text="Correo" />
-        <Field icon="L" text="Contrasena" trail="show" />
+        <Field icon="M" text="Correo" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+        <Field icon="L" text="Contraseña" value={password} onChangeText={setPassword} secure />
         <Text selectable style={styles.forgot}>
           Olvidaste tu contrasena?
         </Text>
-        <PrimaryButton label="Ingresar" suffix="→" onPress={() => navigate('home')} />
+        {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
+        <PrimaryButton label={loading ? 'Ingresando...' : 'Ingresar'} suffix="→" onPress={login} disabled={loading} />
         <Divider />
         <SecondaryButton label="No tienes cuenta? Registrate" onPress={() => navigate('register')} />
       </View>
