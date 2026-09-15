@@ -4,10 +4,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { signUp } from '@/lib/auth';
 
 type ScreenId = 'home' | 'login' | 'register' | 'routes' | 'record' | 'point' | 'finish' | 'detail';
 
@@ -180,6 +183,57 @@ function LoginScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
 }
 
 function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState('');
+
+  const register = async () => {
+    if (loading) return;
+    setFeedback('');
+    const fullName = name.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (fullName.length < 2) {
+      setFeedback('Escribe tu nombre completo.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setFeedback('Escribe un correo electrónico válido.');
+      return;
+    }
+    if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      setFeedback('La contraseña debe tener al menos 8 caracteres, letras y números.');
+      return;
+    }
+    if (password !== confirmation) {
+      setFeedback('Las contraseñas no coinciden.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await signUp(normalizedEmail, password, fullName, phone.trim());
+      if (error) {
+        setFeedback(error.code === 'user_already_exists' || /already registered/i.test(error.message)
+          ? 'Ya existe una cuenta con ese correo.'
+          : error.message);
+        return;
+      }
+      if (data.session) {
+        navigate('home');
+      } else {
+        setFeedback('Si el registro fue aceptado, revisa tu correo para confirmar la cuenta.');
+      }
+    } catch {
+      setFeedback('No se pudo completar el registro. Inténtalo de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       <Hero title="Crear cuenta" subtitle="Unete a nuestra comunidad y comienza a explorar." />
@@ -204,15 +258,16 @@ function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
             </Text>
           </View>
         </View>
-        <Field icon="P" text="Nombre completo" />
-        <Field icon="T" text="Telefono" />
-        <Field icon="M" text="Correo electronico" />
-        <Field icon="L" text="Contrasena" trail="hide" />
+        <Field icon="P" text="Nombre completo" value={name} onChangeText={setName} autoCapitalize="words" />
+        <Field icon="T" text="Teléfono (opcional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+        <Field icon="M" text="Correo electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+        <Field icon="L" text="Contraseña" value={password} onChangeText={setPassword} secure />
         <Text selectable style={styles.helpText}>
           Minimo 8 caracteres, con letras y numeros.
         </Text>
-        <Field icon="L" text="Confirmar contrasena" trail="hide" />
-        <PrimaryButton label="Registrarme" onPress={() => navigate('home')} />
+        <Field icon="L" text="Confirmar contraseña" value={confirmation} onChangeText={setConfirmation} secure />
+        {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
+        <PrimaryButton label={loading ? 'Registrando...' : 'Registrarme'} onPress={register} disabled={loading} />
         <Text selectable onPress={() => navigate('login')} style={styles.centerLink}>
           Ya tienes una cuenta? <Text style={styles.linkStrong}>Iniciar sesion</Text>
         </Text>
@@ -506,7 +561,17 @@ function SearchBox({ text }: { text: string }) {
   );
 }
 
-function Field({ icon, text, trail }: { icon?: string; text: string; trail?: string }) {
+function Field({ icon, text, trail, value, onChangeText, keyboardType, autoCapitalize, secure }: {
+  icon?: string;
+  text: string;
+  trail?: string;
+  value?: string;
+  onChangeText?: (value: string) => void;
+  keyboardType?: 'default' | 'email-address' | 'phone-pad';
+  autoCapitalize?: 'none' | 'sentences' | 'words';
+  secure?: boolean;
+}) {
+  const [visible, setVisible] = useState(false);
   return (
     <View style={styles.field}>
       {icon && (
@@ -514,10 +579,26 @@ function Field({ icon, text, trail }: { icon?: string; text: string; trail?: str
           {icon}
         </Text>
       )}
-      <Text selectable style={styles.fieldText}>
-        {text}
-      </Text>
-      {trail && (
+      {onChangeText ? (
+        <TextInput
+          accessibilityLabel={text}
+          autoCapitalize={autoCapitalize ?? 'none'}
+          keyboardType={keyboardType ?? 'default'}
+          onChangeText={onChangeText}
+          placeholder={text}
+          placeholderTextColor="#7d8683"
+          secureTextEntry={secure && !visible}
+          style={styles.fieldInput}
+          value={value ?? ''}
+        />
+      ) : (
+        <Text selectable style={styles.fieldText}>{text}</Text>
+      )}
+      {secure ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'} onPress={() => setVisible(!visible)}>
+          <Text selectable style={styles.fieldTrail}>{visible ? 'Ocultar' : 'Mostrar'}</Text>
+        </Pressable>
+      ) : trail && (
         <Text selectable style={styles.fieldTrail}>
           {trail}
         </Text>
@@ -653,15 +734,17 @@ function PrimaryButton({
   suffix,
   flex,
   onPress,
+  disabled,
 }: {
   label: string;
   icon?: string;
   suffix?: string;
   flex?: boolean;
   onPress?: () => void;
+  disabled?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.primary, flex && styles.flex, pressed && styles.pressed]}>
+    <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.primary, flex && styles.flex, disabled && styles.disabled, pressed && styles.pressed]}>
       {icon && (
         <Text selectable style={styles.primaryIcon}>
           {icon}
@@ -1031,6 +1114,9 @@ const styles = StyleSheet.create({
   authTitle: { color: '#073d2d', fontSize: 29, fontWeight: '900', textAlign: 'center', letterSpacing: 0 },
   authCopy: { color: '#717a7a', fontSize: 16, lineHeight: 22, textAlign: 'center' },
   field: { minHeight: 56, borderRadius: 14, borderWidth: 1, borderColor: '#d1d8d6', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, backgroundColor: '#fff' },
+  fieldInput: { flex: 1, minWidth: 0, color: '#17221d', fontSize: 16, paddingVertical: 12 },
+  formFeedback: { color: '#9b1d1e', fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  disabled: { opacity: 0.6 },
   fieldIcon: { color: '#39413f', fontSize: 17, fontWeight: '900', width: 20, textAlign: 'center' },
   fieldText: { color: '#9299a2', fontSize: 16, flex: 1 },
   fieldTrail: { color: '#1b3327', fontSize: 11, fontWeight: '800' },
