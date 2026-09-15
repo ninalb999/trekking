@@ -24,6 +24,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      ["expo-location", { "locationWhenInUsePermission": "Permite que Trekking use tu ubicacion para grabar tu recorrido." }],
       "expo-router",
       [
         "expo-splash-screen",
