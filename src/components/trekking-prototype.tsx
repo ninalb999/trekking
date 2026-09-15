@@ -9,6 +9,9 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRecording } from '../hooks/use-recording';
+import { formatElapsed } from '../lib/recording';
+import RouteMap from './route-map';
 
 import { getSession, signInWithPassword, signOut, signUp } from '@/lib/auth';
 import { getSupabase } from '@/lib/supabase';
@@ -35,6 +38,7 @@ const ROUTES = [
 ];
 
 export function TrekkingPrototype() {
+  const recording = useRecording();
   const [screen, setCurrentScreen] = useState<ScreenId>('login');
   const [activeTab, setActiveTab] = useState('Inicio');
   const [authenticated, setAuthenticated] = useState(false);
@@ -43,6 +47,8 @@ export function TrekkingPrototype() {
   const phoneWidth = Math.min(width, 430);
   const isAuth = screen === 'login' || screen === 'register';
   const setScreen = (next: ScreenId) => {
+    if (screen === 'point' && next === 'record' && recording.track.status === 'paused') void recording.begin();
+    if (next !== 'record' && (recording.track.status === 'recording' || recording.busy)) recording.pause();
     if (next === 'home') setActiveTab('Inicio');
     if (next === 'routes') setActiveTab('Mis rutas');
     if (next === 'record' || next === 'point' || next === 'finish') setActiveTab('Grabar');
@@ -87,9 +93,9 @@ export function TrekkingPrototype() {
         {screen === 'login' && <LoginScreen navigate={setScreen} />}
         {screen === 'register' && <RegisterScreen navigate={setScreen} />}
         {screen === 'routes' && <MyRoutesScreen navigate={setScreen} />}
-        {screen === 'record' && <RecordingScreen navigate={setScreen} />}
-        {screen === 'point' && <PointScreen navigate={setScreen} />}
-        {screen === 'finish' && <FinishScreen navigate={setScreen} />}
+        {screen === 'record' && <RecordingScreen navigate={setScreen} recording={recording} />}
+        {screen === 'point' && <PointScreen navigate={setScreen} elapsed={recording.elapsed} />}
+        {screen === 'finish' && <FinishScreen navigate={setScreen} recording={recording} />}
         {screen === 'detail' && <DetailScreen navigate={setScreen} />}
         </ScrollView>
         {!isAuth && (
@@ -354,7 +360,9 @@ function MyRoutesScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
   );
 }
 
-function RecordingScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId) => void; recording: ReturnType<typeof useRecording> }) {
+  const { track, busy, error, begin, pause, finish, elapsed } = recording;
+  const active = track.status === 'recording';
   return (
     <>
       <Hero title="Grabando ruta" subtitle="Explora. Camina. Comparte." />
@@ -363,23 +371,29 @@ function RecordingScreen({ navigate }: { navigate: (screen: ScreenId) => void })
           <View style={styles.liveDot} />
           <View style={styles.flex}>
             <Text selectable style={styles.bannerTitle}>
-              Ruta en progreso
+              {active ? 'Ruta en progreso' : track.status === 'paused' ? 'Ruta en pausa' : 'Grabar recorrido'}
             </Text>
             <Text selectable style={styles.bannerCopy}>
-              Tu recorrido se esta guardando automaticamente
+              {busy ? 'Buscando ubicacion GPS...' : 'Mantén la app abierta durante el recorrido.'}
             </Text>
           </View>
-          <Pill label="GPS activo" tone="green" small />
+          <Pill label={active ? 'GPS activo' : 'GPS detenido'} tone="green" small />
         </View>
         <View style={styles.metrics}>
-          <Metric title="Distancia" value="8.7 km" icon="D" />
-          <Metric title="Tiempo activo" value="2 h 14 min" icon="T" />
+          <Metric title="Distancia" value={`${(track.distance / 1000).toFixed(2)} km`} icon="D" />
+          <Metric title="Tiempo activo" value={formatElapsed(elapsed)} icon="T" />
         </View>
-        <MapCard recording />
+        <RouteMap points={[...track.points]} dom={{ style: { height: 342 }, scrollEnabled: false }} />
+        {!!error && <Text accessibilityRole="alert" style={styles.formCopy}>{error}</Text>}
+        <Pressable accessibilityRole="button" disabled={busy} onPress={active ? pause : () => void begin()} style={[styles.detailButton, busy && { opacity: 0.5 }]}>
+          <Text style={styles.detailButtonText}>{busy ? 'Buscando GPS...' : active ? 'Pausar ruta' : track.status === 'paused' ? 'Continuar ruta' : 'Iniciar grabacion'}</Text>
+        </Pressable>
+        {(active || track.status === 'paused') && <>
         <View style={styles.actions}>
           <SecondaryButton label="Agregar punto" icon="P" flex onPress={() => navigate('point')} />
-          <DangerButton label="Finalizar" onPress={() => navigate('finish')} />
+          <DangerButton label="Finalizar" onPress={() => { finish(); navigate('finish'); }} />
         </View>
+        </>}
         <View style={styles.note}>
           <Icon label="i" />
           <Text selectable style={styles.noteText}>
@@ -391,7 +405,7 @@ function RecordingScreen({ navigate }: { navigate: (screen: ScreenId) => void })
   );
 }
 
-function PointScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+function PointScreen({ navigate, elapsed }: { navigate: (screen: ScreenId) => void; elapsed: number }) {
   return (
     <>
       <Hero title="Agregar punto" subtitle="Marca un lugar importante en tu ruta" center />
@@ -411,7 +425,7 @@ function PointScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
             </Text>
           </View>
           <Text selectable style={styles.timer}>
-            02:14:26
+            {formatElapsed(elapsed)}
           </Text>
         </View>
         <Text selectable style={styles.sectionTitle}>
@@ -467,7 +481,7 @@ function PointScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
   );
 }
 
-function FinishScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) => void; recording: ReturnType<typeof useRecording> }) {
   return (
     <>
       <Hero title="Finalizar ruta" subtitle="Revisa los detalles y guarda tu ruta." />
@@ -478,17 +492,17 @@ function FinishScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
           </View>
           <View style={styles.flex}>
             <Text selectable style={styles.bannerTitle}>
-              Ruta registrada correctamente
+              Grabacion finalizada
             </Text>
             <Text selectable style={styles.bannerCopy}>
-              Hemos calculado la informacion de tu ruta.
+              Recorrido conservado durante esta sesion. Guardado en la nube pendiente.
             </Text>
           </View>
         </View>
         <View style={styles.summary}>
-          <SmallMetric value="12.4 km" label="Distancia total" />
-          <SmallMetric value="5 h 30 min" label="Tiempo activo" />
-          <SmallMetric value="3" label="Paradas" />
+          <SmallMetric value={`${(recording.track.distance / 1000).toFixed(2)} km`} label="Distancia total" />
+          <SmallMetric value={formatElapsed(recording.elapsed)} label="Tiempo activo" />
+          <SmallMetric value={String(recording.track.points.length)} label="Coordenadas" />
         </View>
         <Text selectable style={styles.sectionTitle}>
           Foto principal
@@ -531,7 +545,7 @@ function FinishScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
           <Visibility title="Publica" active />
           <Visibility title="Privada" />
         </View>
-        <PrimaryButton label="Guardar ruta" icon="S" onPress={() => navigate('routes')} />
+        <SecondaryButton label="Volver a Mis rutas" onPress={() => navigate('routes')} />
       </View>
     </>
   );
