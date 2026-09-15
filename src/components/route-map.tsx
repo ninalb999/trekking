@@ -3,9 +3,16 @@
 import { useEffect, useRef, useState } from 'react';
 import type * as Leaflet from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { TrackPoint } from '../lib/recording';
+import type { Tables } from '@/types/database';
 
-export default function RouteMap({ points }: { points: TrackPoint[]; dom?: import('expo/dom').DOMProps }) {
+type TrackCoordinate = Pick<Tables<'route_track_points'>, 'latitude' | 'longitude'> & { segment?: number };
+type MarkedRoutePoint = Pick<Tables<'route_points'>, 'latitude' | 'longitude' | 'name' | 'point_type' | 'sequence_no'>;
+
+export default function RouteMap({ points, routePoints = [] }: {
+  points: TrackCoordinate[];
+  routePoints?: MarkedRoutePoint[];
+  dom?: import('expo/dom').DOMProps;
+}) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<Leaflet.Map | null>(null);
   const layer = useRef<Leaflet.LayerGroup | null>(null);
@@ -32,18 +39,26 @@ export default function RouteMap({ points }: { points: TrackPoint[]; dom?: impor
     layer.current.clearLayers();
     const segments = new Map<number, Leaflet.LatLngTuple[]>();
     for (const point of points) {
-      const segment = segments.get(point.segment) ?? [];
-      segment.push([point.latitude, point.longitude]); segments.set(point.segment, segment);
+      const segmentNumber = point.segment ?? 0;
+      const segment = segments.get(segmentNumber) ?? [];
+      segment.push([point.latitude, point.longitude]); segments.set(segmentNumber, segment);
     }
     for (const coordinates of segments.values()) L.polyline(coordinates, { color: '#1f6a43', weight: 5 }).addTo(layer.current);
     const first = points[0], last = points.at(-1);
     if (first) L.circleMarker([first.latitude, first.longitude], { radius: 7, color: '#1f6a43' }).bindTooltip('Inicio').addTo(layer.current);
     if (last) {
-      L.circleMarker([last.latitude, last.longitude], { radius: 7, color: '#2675ef' }).bindTooltip('Tu ubicacion').addTo(layer.current);
-      map.current.setView([last.latitude, last.longitude], Math.max(map.current.getZoom(), 15));
+      L.circleMarker([last.latitude, last.longitude], { radius: 7, color: '#2675ef' }).bindTooltip('Final').addTo(layer.current);
+    }
+    for (const point of routePoints) {
+      L.circleMarker([point.latitude, point.longitude], { radius: 6, color: '#e58a15', fillOpacity: 1 })
+        .bindTooltip(point.name || point.point_type)
+        .addTo(layer.current);
+    }
+    if (points.length) {
+      map.current.fitBounds(points.map(point => [point.latitude, point.longitude] as Leaflet.LatLngTuple), { padding: [24, 24], maxZoom: 16 });
     }
     map.current.invalidateSize();
-  }, [points, ready]);
+  }, [points, ready, routePoints]);
   return <div style={{ position: 'relative', height: 342, width: '100%' }}>
     <div ref={container} aria-label="Mapa del recorrido GPS" style={{ height: '100%', width: '100%' }} />
     {error && <div role="status" style={{ position: 'absolute', top: 0, left: 40, right: 0, zIndex: 1000, background: 'white', padding: 8 }}>{error}</div>}

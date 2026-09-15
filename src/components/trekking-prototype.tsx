@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRecording } from '../hooks/use-recording';
 import { formatElapsed } from '../lib/recording';
 import { pickRouteImage, type RouteImageSelection } from '../lib/route-images';
+import { RouteDetailMap } from './route-detail-map';
 import RouteMap from './route-map';
 
 import { getSession, signInWithPassword, signOut, signUp } from '@/lib/auth';
@@ -571,7 +572,7 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
   );
 }
 
-function DetailScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+function DetailScreen({ navigate, routeId }: { navigate: (screen: ScreenId) => void; routeId?: string }) {
   return (
     <View style={styles.detailContent}>
       <View style={styles.detailBar}>
@@ -605,7 +606,7 @@ function DetailScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
         <SecondaryButton label="Guardar" icon="B" flex />
       </View>
       <Panel title="Mapa de la ruta">
-        <MapCard small />
+        {routeId ? <RouteDetailMap routeId={routeId} /> : <MapCard small />}
       </Panel>
       <Panel title="Equipo indispensable">
         <ChipCloud items={['Mochila', 'Botas de trekking', 'Agua (2L+)', 'Ropa termica', 'Impermeable', 'Bastones']} />
