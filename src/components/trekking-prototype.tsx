@@ -265,7 +265,10 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
           <Metric title="Distancia" value={`${(track.distance / 1000).toFixed(2)} km`} icon="D" />
           <Metric title="Tiempo activo" value={formatElapsed(elapsed)} icon="T" />
         </View>
-        <RouteMap points={[...track.points]} dom={{ style: { height: 342 }, scrollEnabled: false }} />
+        <RouteMap
+          points={[...track.points]}
+          dom={{ useExpoDOMWebView: false, style: { height: 342 }, scrollEnabled: false }}
+        />
         {!!error && <Text accessibilityRole="alert" style={styles.formCopy}>{error}</Text>}
         <Pressable accessibilityRole="button" disabled={busy} onPress={active ? pause : () => void begin()} style={[styles.detailButton, busy && { opacity: 0.5 }]}>
           <Text style={styles.detailButtonText}>{busy ? 'Buscando GPS...' : active ? 'Pausar ruta' : track.status === 'paused' ? 'Continuar ruta' : 'Iniciar grabacion'}</Text>
