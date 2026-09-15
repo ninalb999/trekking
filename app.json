@@ -25,6 +25,7 @@
     },
     "plugins": [
       ["expo-location", { "locationWhenInUsePermission": "Permite que Trekking use tu ubicacion para grabar tu recorrido." }],
+      ["expo-image-picker", { "photosPermission": "Permite que Trekking seleccione una fotografía principal para tu ruta." }],
       "expo-router",
       [
         "expo-splash-screen",

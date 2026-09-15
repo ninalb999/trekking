@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRecording } from '../hooks/use-recording';
 import { formatElapsed } from '../lib/recording';
+import { pickRouteImage, type RouteImageSelection } from '../lib/route-images';
 import RouteMap from './route-map';
 
 import { getSession, signInWithPassword, signOut, signUp } from '@/lib/auth';
@@ -478,6 +480,27 @@ function PointScreen({ navigate, elapsed }: { navigate: (screen: ScreenId) => vo
 }
 
 function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) => void; recording: ReturnType<typeof useRecording> }) {
+  const [routeImage, setRouteImage] = useState<RouteImageSelection | null>(null);
+  const [imageFeedback, setImageFeedback] = useState('');
+  const [pickingImage, setPickingImage] = useState(false);
+
+  const chooseImage = async () => {
+    if (pickingImage) return;
+    setImageFeedback('');
+    setPickingImage(true);
+    try {
+      const selection = await pickRouteImage();
+      if (selection) {
+        setRouteImage(selection);
+        setImageFeedback('Foto seleccionada. Se subirá cuando la ruta se guarde.');
+      }
+    } catch (error) {
+      setImageFeedback(error instanceof Error ? error.message : 'No se pudo seleccionar la fotografía.');
+    } finally {
+      setPickingImage(false);
+    }
+  };
+
   return (
     <>
       <Hero title="Finalizar ruta" subtitle="Revisa los detalles y guarda tu ruta." />
@@ -504,16 +527,17 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
           Foto principal
         </Text>
         <View style={styles.photoRow}>
-          <Photo wide />
-          <View style={styles.upload}>
+          {routeImage ? <Image source={{ uri: routeImage.uri }} style={[styles.photo, styles.photoWide]} resizeMode="cover" /> : <Photo wide />}
+          <Pressable accessibilityRole="button" disabled={pickingImage} onPress={chooseImage} style={({ pressed }) => [styles.upload, pickingImage && styles.disabled, pressed && styles.pressed]}>
             <Text selectable style={styles.uploadPlus}>
               +
             </Text>
             <Text selectable style={styles.formCopy}>
-              Subir foto
+              {pickingImage ? 'Abriendo...' : routeImage ? 'Cambiar foto' : 'Subir foto'}
             </Text>
-          </View>
+          </Pressable>
         </View>
+        {!!imageFeedback && <Text selectable accessibilityLiveRegion="polite" style={styles.formCopy}>{imageFeedback}</Text>}
         <Text selectable style={styles.sectionTitle}>
           Nombre de la ruta
         </Text>
