@@ -632,7 +632,9 @@ function DetailScreen({ navigate, routeId }: { navigate: (screen: ScreenId) => v
         <SecondaryButton label="Guardar" icon="B" flex />
       </View>
       <Panel title="Mapa de la ruta">
-        {routeId ? <RouteDetailMap routeId={routeId} /> : <MapCard small />}
+        {routeId
+          ? <RouteDetailMap routeId={routeId} />
+          : <Text selectable style={styles.formCopy}>Selecciona una ruta guardada para cargar su recorrido real.</Text>}
       </Panel>
       <Panel title="Equipo indispensable">
         <ChipCloud items={['Mochila', 'Botas de trekking', 'Agua (2L+)', 'Ropa termica', 'Impermeable', 'Bastones']} />
@@ -825,29 +827,6 @@ function Photo({ seed = 0, wide, tall, hero }: { seed?: number; wide?: boolean; 
       <View style={[styles.photoHillOne, { borderBottomColor: '#e8d5a4' }]} />
       <View style={[styles.photoHillTwo, { borderBottomColor: hills[seed % hills.length] }]} />
       <View style={styles.photoWater} />
-    </View>
-  );
-}
-
-function MapCard({ recording, small }: { recording?: boolean; small?: boolean }) {
-  return (
-    <View style={[styles.map, small && styles.mapSmall]}>
-      <View style={styles.mapGrid} />
-      <View style={[styles.path, styles.pathOne]} />
-      <View style={[styles.path, styles.pathTwo]} />
-      <View style={[styles.path, styles.pathThree]} />
-      <View style={[styles.mapPin, styles.mapStart]} />
-      <View style={[styles.mapPin, styles.mapEnd]} />
-      {recording && (
-        <View style={styles.location}>
-          <Text selectable style={styles.locationText}>
-            Tu ubicacion
-          </Text>
-        </View>
-      )}
-      <Text selectable style={styles.scale}>
-        0     500 m     1 km
-      </Text>
     </View>
   );
 }
