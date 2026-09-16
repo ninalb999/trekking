@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -17,9 +17,10 @@ import { RouteDetailMap } from './route-detail-map';
 import RouteMap from './route-map';
 
 import { getSession, signInWithPassword, signOut, signUp } from '@/lib/auth';
+import { screenAfterAuthEvent, type AuthScreen } from '@/lib/auth-events';
 import { getSupabase } from '@/lib/supabase';
 
-type ScreenId = 'home' | 'login' | 'register' | 'routes' | 'record' | 'point' | 'finish' | 'detail';
+type ScreenId = AuthScreen;
 
 const ROUTES = [
   ['Laguna Escondida', 'Andes Explorer', '12.4 km', '5 h 30 min', 'Novato', 'green'],
@@ -31,9 +32,11 @@ const ROUTES = [
 
 export function TrekkingPrototype() {
   const recording = useRecording();
+  const pauseRecording = useRef(recording.pause);
   const [screen, setCurrentScreen] = useState<ScreenId>('login');
   const [activeTab, setActiveTab] = useState('Inicio');
   const [authenticated, setAuthenticated] = useState(false);
+  const [sessionFeedback, setSessionFeedback] = useState('');
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const phoneWidth = Math.min(width, 430);
@@ -48,27 +51,47 @@ export function TrekkingPrototype() {
   };
 
   useEffect(() => {
-    const showHome = () => {
-      setActiveTab('Inicio');
-      setCurrentScreen('home');
+    let active = true;
+    let receivedAuthEvent = false;
+    const applyAuthEvent = (event: string, hasSession: boolean) => {
+      if (!active) return;
+      setAuthenticated(hasSession);
+      setCurrentScreen(current => {
+        const next = screenAfterAuthEvent(event, hasSession, current);
+        if (next === 'home' && next !== current) setActiveTab('Inicio');
+        if (next === 'login' && next !== current) {
+          pauseRecording.current();
+          setActiveTab('Inicio');
+        }
+        return next;
+      });
     };
     const { data: subscription } = getSupabase().auth.onAuthStateChange((event, session) => {
-      setAuthenticated(Boolean(session));
-      if (session) showHome();
-      if (event === 'SIGNED_OUT') setCurrentScreen('login');
+      receivedAuthEvent = true;
+      applyAuthEvent(event, Boolean(session));
     });
     getSession().then(({ data }) => {
-      if (data.session) {
-        setAuthenticated(true);
-        showHome();
+      if (!receivedAuthEvent) applyAuthEvent('INITIAL_SESSION', Boolean(data.session));
+    }).catch(() => {
+      if (active && !receivedAuthEvent) {
+        setAuthenticated(false);
+        setSessionFeedback('No se pudo restaurar la sesión. Revisa tu conexión e inténtalo de nuevo.');
       }
-    }).catch(() => {});
-    return () => subscription.subscription.unsubscribe();
+    });
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
   }, []);
 
   const logOut = async () => {
+    setSessionFeedback('');
     const { error } = await signOut();
-    if (!error) setScreen('login');
+    if (error) {
+      setSessionFeedback('No se pudo cerrar la sesión. Inténtalo de nuevo.');
+      return;
+    }
+    setScreen('login');
   };
 
   return (
@@ -81,7 +104,7 @@ export function TrekkingPrototype() {
           contentContainerStyle={{ paddingBottom: isAuth ? insets.bottom + 16 : 16 }}
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="never">
-        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} />}
+        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} sessionFeedback={sessionFeedback} />}
         {screen === 'login' && <LoginScreen navigate={setScreen} />}
         {screen === 'register' && <RegisterScreen navigate={setScreen} />}
         {screen === 'routes' && <MyRoutesScreen navigate={setScreen} />}
@@ -137,16 +160,18 @@ function Hero({ title, subtitle, center }: { title: string; subtitle: string; ce
   );
 }
 
-function HomeScreen({ navigate, authenticated, onSignOut }: {
+function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback }: {
   navigate: (screen: ScreenId) => void;
   authenticated: boolean;
   onSignOut: () => void;
+  sessionFeedback: string;
 }) {
   return (
     <>
       <Hero title="Rutas de Trekking" subtitle="Explora. Camina. Comparte." />
       <View style={styles.content}>
         <SecondaryButton label={authenticated ? 'Cerrar sesión' : 'Iniciar sesión / Crear cuenta'} onPress={authenticated ? onSignOut : () => navigate('login')} />
+        {!!sessionFeedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{sessionFeedback}</Text>}
         <SearchBox text="Buscar rutas, lugares o creadores..." />
         <View style={styles.rowBetween}>
           <View style={styles.row}>
