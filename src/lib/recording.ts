@@ -20,17 +20,23 @@ export class Recording {
     this.segment += 1;
     this.start(now);
   }
-  finish(now: number, finalPoint?: Omit<TrackPoint, 'segment'>) {
-    if (this.status === 'finished') return;
+  finish(
+    now: number,
+    finalPoint?: Omit<TrackPoint, 'segment'>,
+    finalPointStartsNewSegment = this.status === 'paused',
+  ) {
+    if (this.status === 'finished') return false;
+    if (this.status === 'recording') this.pause(now);
+    let finalPointAccepted = false;
     if (finalPoint) {
-      if (this.status === 'paused') this.segment += 1;
+      if (finalPointStartsNewSegment) this.segment += 1;
       const previousStatus = this.status;
       this.status = 'recording';
-      this.add(finalPoint);
+      finalPointAccepted = this.add(finalPoint);
       this.status = previousStatus;
     }
-    this.pause(now);
     this.status = 'finished';
+    return finalPointAccepted;
   }
   add(point: Omit<TrackPoint, 'segment'>) {
     if (this.status !== 'recording' || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude) ||

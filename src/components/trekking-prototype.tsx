@@ -414,7 +414,7 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
           <DangerButton
             label={busy ? 'Finalizando...' : 'Finalizar'}
             disabled={busy}
-            onPress={() => void finish().then(() => navigate('finish'))}
+            onPress={() => void finish().then(finished => { if (finished) navigate('finish'); })}
           />
         </View>
         </>}
@@ -549,6 +549,7 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
           <SmallMetric value={formatElapsed(recording.elapsed)} label="Tiempo activo" />
           <SmallMetric value={String(recording.track.points.length)} label="Coordenadas" />
         </View>
+        {!!recording.error && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{recording.error}</Text>}
         <Text selectable style={styles.sectionTitle}>
           Foto principal
         </Text>

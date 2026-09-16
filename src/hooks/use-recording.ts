@@ -78,27 +78,35 @@ export function useRecording() {
     } finally { busyRef.current = false; setBusy(false); update(); }
   };
   const finish = async () => {
-    if (busyRef.current || engine.current.status === 'idle' || engine.current.status === 'finished') return;
+    if (busyRef.current || engine.current.status === 'idle' || engine.current.status === 'finished') return false;
     busyRef.current = true;
     setBusy(true);
     setError('');
+    const stoppedAt = Date.now();
+    const finalPointStartsNewSegment = engine.current.status === 'paused';
     stopWatcher();
+    engine.current.pause(stoppedAt);
+    update(stoppedAt);
     try {
       const final = await initialPosition();
-      engine.current.finish(Date.now(), {
+      const accepted = engine.current.finish(stoppedAt, {
         latitude: final.coords.latitude,
         longitude: final.coords.longitude,
         accuracy: final.coords.accuracy,
         timestamp: final.timestamp,
-      });
+      }, finalPointStartsNewSegment);
+      if (!accepted) {
+        setError('La ruta terminó usando la última posición válida porque la lectura final no fue confiable.');
+      }
     } catch {
-      engine.current.finish(Date.now());
+      engine.current.finish(stoppedAt);
       setError('La ruta terminó, pero no se pudo obtener una última posición GPS.');
     } finally {
       busyRef.current = false;
       setBusy(false);
-      update();
+      update(stoppedAt);
     }
+    return true;
   };
   return { track: snapshot.track, busy, error, begin, pause, finish, elapsed: snapshot.elapsed };
 }

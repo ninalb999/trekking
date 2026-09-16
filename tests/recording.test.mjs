@@ -33,10 +33,31 @@ test('rejects poor accuracy, stale readings, impossible coordinates and jumps', 
 });
 test('finish is idempotent and ignores further locations', () => {
   const track = new Recording(); track.start(1000); track.add(point(0, 1000));
-  track.finish(11000, point(0.001, 11000)); track.finish(21000, point(0.002, 21000));
+  assert.equal(track.finish(11000, point(0.001, 11000)), true);
+  assert.equal(track.finish(21000, point(0.002, 21000)), false);
   assert.equal(track.elapsed(31000), 10000);
   assert.equal(track.points.length, 2);
   assert.ok(track.distance >= 110 && track.distance <= 112);
   assert.equal(track.add(point(0.001, 31000)), false);
   assert.equal(formatElapsed(3661000), '01:01:01');
+});
+
+test('finish from pause keeps elapsed frozen and starts a separate final segment', () => {
+  const track = new Recording();
+  track.start(1000); track.add(point(0, 1000)); track.add(point(0.001, 21000));
+  track.pause(21000);
+  const distance = track.distance;
+  assert.equal(track.finish(51000, point(1, 51000)), true);
+  assert.equal(track.elapsed(91000), 20000);
+  assert.equal(track.distance, distance);
+  assert.equal(track.points.at(-1).segment, 1);
+});
+
+test('invalid final reading does not discard the valid track', () => {
+  const track = new Recording();
+  track.start(1000); track.add(point(0, 1000));
+  assert.equal(track.finish(11000, point(0.001, 11000, 100)), false);
+  assert.equal(track.status, 'finished');
+  assert.equal(track.points.length, 1);
+  assert.equal(track.elapsed(21000), 10000);
 });
