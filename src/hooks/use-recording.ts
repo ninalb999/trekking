@@ -3,6 +3,16 @@ import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import { Recording } from '../lib/recording';
 
+export type RecordedPlace = {
+  id: string;
+  type: 'campamento' | 'descanso' | 'agua' | 'tienda' | 'otro';
+  label: string;
+  name: string;
+  description: string;
+  latitude: number;
+  longitude: number;
+};
+
 async function initialPosition() {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -22,6 +32,7 @@ export function useRecording() {
   const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [places, setPlaces] = useState<RecordedPlace[]>([]);
   const [snapshot, setSnapshot] = useState({
     track: { points: [] as Recording['points'], distance: 0, status: 'idle' as Recording['status'] },
     elapsed: 0,
@@ -60,7 +71,11 @@ export function useRecording() {
       if (token !== generation.current) return;
       if (first.coords.accuracy === null || first.coords.accuracy > 50) throw new Error('La precision GPS es insuficiente. Sal a un lugar abierto y vuelve a intentar.');
       if (engine.current.status === 'paused') engine.current.resume(Date.now());
-      else { engine.current = new Recording(); engine.current.start(Date.now()); }
+      else {
+        engine.current = new Recording();
+        setPlaces([]);
+        engine.current.start(Date.now());
+      }
       const add = (location: Location.LocationObject) => {
         if (token !== generation.current) return;
         engine.current.add({ latitude: location.coords.latitude, longitude: location.coords.longitude,
@@ -108,5 +123,19 @@ export function useRecording() {
     }
     return true;
   };
-  return { track: snapshot.track, busy, error, begin, pause, finish, elapsed: snapshot.elapsed };
+  const addPlace = (place: Omit<RecordedPlace, 'id' | 'latitude' | 'longitude'>) => {
+    const position = engine.current.points.at(-1);
+    if (!position) {
+      setError('Espera una ubicación GPS válida antes de guardar un punto.');
+      return false;
+    }
+    setPlaces(current => [...current, {
+      ...place,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      latitude: position.latitude,
+      longitude: position.longitude,
+    }]);
+    return true;
+  };
+  return { track: snapshot.track, places, busy, error, begin, pause, finish, addPlace, elapsed: snapshot.elapsed };
 }

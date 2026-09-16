@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -19,25 +19,22 @@ import RouteMap from './route-map';
 
 import { getSession, signInWithPassword, signOut, signUp } from '@/lib/auth';
 import { screenAfterAuthEvent, type AuthScreen } from '@/lib/auth-events';
+import { getPublicRouteImageUrl, listPublicRoutes, type PublicRoute } from '@/lib/public-routes';
 import { getSupabase } from '@/lib/supabase';
+import { listCurrentUserRoutes, type UserRoute } from '@/lib/user-routes';
 
 type ScreenId = AuthScreen;
 
-const ROUTES = [
-  ['Laguna Escondida', 'Andes Explorer', '12.4 km', '5 h 30 min', 'Novato', 'green'],
-  ['Cerro Mirador', 'RutaLibre', '8.7 km', '3 h 20 min', 'Intermedio', 'blue'],
-  ['Pico del Sol', 'Montana Viva', '15.2 km', '7 h 10 min', 'Experto', 'red'],
-  ['Bosque del Rio', 'CaminaMas', '6.1 km', '2 h 45 min', 'Novato', 'green'],
-  ['Ruta de las Rocas', 'Aventura Natural', '10.3 km', '4 h 15 min', 'Intermedio', 'blue'],
-];
+const DEFAULT_DIFFICULTIES = ['Novato', 'Intermedio', 'Experto'];
 
 export function TrekkingPrototype() {
   const recording = useRecording();
   const pauseRecording = useRef(recording.pause);
-  const [screen, setCurrentScreen] = useState<ScreenId>('login');
+  const [screen, setCurrentScreen] = useState<ScreenId>('home');
   const [activeTab, setActiveTab] = useState('Inicio');
   const [authenticated, setAuthenticated] = useState(false);
   const [sessionFeedback, setSessionFeedback] = useState('');
+  const [selectedPublicRoute, setSelectedPublicRoute] = useState<PublicRoute | null>(null);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const phoneWidth = Math.min(width, 430);
@@ -105,14 +102,14 @@ export function TrekkingPrototype() {
           contentContainerStyle={{ paddingBottom: isAuth ? insets.bottom + 16 : 16 }}
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="never">
-        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} sessionFeedback={sessionFeedback} />}
+        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} sessionFeedback={sessionFeedback} onOpenRoute={route => { setSelectedPublicRoute(route); setScreen('detail'); }} />}
         {screen === 'login' && <LoginScreen navigate={setScreen} />}
         {screen === 'register' && <RegisterScreen navigate={setScreen} />}
-        {screen === 'routes' && <MyRoutesScreen navigate={setScreen} />}
+        {screen === 'routes' && <MyRoutesScreen key={authenticated ? 'authenticated' : 'guest'} navigate={setScreen} authenticated={authenticated} />}
         {screen === 'record' && <RecordingScreen navigate={setScreen} recording={recording} />}
-        {screen === 'point' && <PointScreen navigate={setScreen} elapsed={recording.elapsed} />}
+        {screen === 'point' && <PointScreen navigate={setScreen} recording={recording} />}
         {screen === 'finish' && <FinishScreen navigate={setScreen} recording={recording} />}
-        {screen === 'detail' && <DetailScreen navigate={setScreen} />}
+        {screen === 'detail' && <DetailScreen navigate={setScreen} route={selectedPublicRoute} recordedPlaces={recording.places} />}
         </ScrollView>
         {!isAuth && (
           <View style={{ paddingBottom: insets.bottom, backgroundColor: '#fff', flexShrink: 0 }}>
@@ -161,19 +158,52 @@ function Hero({ title, subtitle, center }: { title: string; subtitle: string; ce
   );
 }
 
-function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback }: {
+function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback, onOpenRoute }: {
   navigate: (screen: ScreenId) => void;
   authenticated: boolean;
   onSignOut: () => void;
   sessionFeedback: string;
+  onOpenRoute: (route: PublicRoute) => void;
 }) {
+  const [routes, setRoutes] = useState<PublicRoute[]>([]);
+  const [query, setQuery] = useState('');
+  const [difficulty, setDifficulty] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    listPublicRoutes()
+      .then(data => { if (active) setRoutes(data); })
+      .catch(() => { if (active) setError('No se pudieron cargar las rutas públicas. Inténtalo de nuevo.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const difficulties = useMemo(() => {
+    const available = routes
+      .map(route => route.difficulty?.trim())
+      .filter((value): value is string => Boolean(value));
+    return [...new Set([...DEFAULT_DIFFICULTIES, ...available])];
+  }, [routes]);
+  const visibleRoutes = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return routes.filter(route => {
+      const matchesDifficulty = !difficulty || route.difficulty?.trim() === difficulty;
+      const searchable = `${route.name ?? ''} ${route.description ?? ''}`.toLocaleLowerCase();
+      return matchesDifficulty && (!normalizedQuery || searchable.includes(normalizedQuery));
+    });
+  }, [difficulty, query, routes]);
+
+  const clearFilters = () => { setQuery(''); setDifficulty(null); };
+
   return (
     <>
       <Hero title="Rutas de Trekking" subtitle="Explora. Camina. Comparte." />
       <View style={styles.content}>
         <SecondaryButton label={authenticated ? 'Cerrar sesión' : 'Iniciar sesión / Crear cuenta'} onPress={authenticated ? onSignOut : () => navigate('login')} />
         {!!sessionFeedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{sessionFeedback}</Text>}
-        <SearchBox text="Buscar rutas, lugares o creadores..." />
+        <SearchBox value={query} onChangeText={setQuery} />
         <View style={styles.rowBetween}>
           <View style={styles.row}>
             <Icon label="F" />
@@ -181,20 +211,22 @@ function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback }: {
               Filtros
             </Text>
           </View>
-          <Text selectable style={styles.link}>
+          <Text selectable accessibilityRole="button" onPress={clearFilters} style={styles.link}>
             Limpiar todo
           </Text>
         </View>
         <View style={styles.pillGrid}>
-          <Pill label="Novato" tone="green" />
-          <Pill label="Intermedio" tone="sand" />
-          <Pill label="Experto" tone="red" />
-          <Pill label="Mas recientes" />
-          <Pill label="Mas visitadas" />
-          <Pill label="Cerca de mi" />
+          {difficulties.map(value => (
+            <FilterPill key={value} label={value} selected={difficulty === value} onPress={() => setDifficulty(current => current === value ? null : value)} />
+          ))}
         </View>
-        {ROUTES.map((route, index) => (
-          <RouteCard key={route[0]} route={route} index={index} onPress={() => navigate('detail')} />
+        {loading && <Text style={styles.formCopy}>Cargando rutas públicas...</Text>}
+        {!!error && <Text accessibilityRole="alert" style={styles.formFeedback}>{error}</Text>}
+        {!loading && !error && visibleRoutes.length === 0 && (
+          <Text style={styles.formCopy}>No encontramos rutas que coincidan con tu búsqueda.</Text>
+        )}
+        {visibleRoutes.map((route, index) => (
+          <PublicRouteCard key={route.id} route={route} index={index} onPress={() => onOpenRoute(route)} />
         ))}
         <PrimaryButton label="Grabar ruta" icon="+" onPress={() => navigate('record')} />
       </View>
@@ -363,14 +395,46 @@ function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
   );
 }
 
-function MyRoutesScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+function MyRoutesScreen({ navigate, authenticated }: { navigate: (screen: ScreenId) => void; authenticated: boolean }) {
+  const [routes, setRoutes] = useState<UserRoute[]>([]);
+  const [filter, setFilter] = useState<'all' | 'public' | 'private'>('all');
+  const [loading, setLoading] = useState(authenticated);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    if (!authenticated) return () => { active = false; };
+    listCurrentUserRoutes()
+      .then(data => { if (active) setRoutes(data); })
+      .catch(() => { if (active) setError('No se pudieron cargar tus rutas. Inténtalo de nuevo.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [authenticated]);
+
+  const visibleRoutes = routes.filter(route => filter === 'all' || route.visibility === filter);
   return (
     <>
       <Hero title="Mis rutas" subtitle="Tus aventuras, en un solo lugar." />
       <View style={styles.content}>
-        <Segmented values={['Todas', 'Publicas', 'Privadas']} />
-        {ROUTES.slice(0, 4).map((route, index) => (
-          <OwnedCard key={route[0]} route={route} index={index} privateRoute={index % 2 === 1} onPress={() => navigate('detail')} />
+        <View style={styles.segmented}>
+          {([
+            ['all', 'Todas'],
+            ['public', 'Públicas'],
+            ['private', 'Privadas'],
+          ] as const).map(([value, label]) => (
+            <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: filter === value }} onPress={() => setFilter(value)} style={[styles.segment, filter === value && styles.segmentActive]}>
+              <Text style={[styles.segmentText, filter === value && styles.segmentTextActive]}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {!authenticated && <Text accessibilityRole="alert" style={styles.formCopy}>Inicia sesión para consultar tus rutas.</Text>}
+        {loading && <Text style={styles.formCopy}>Cargando tus rutas...</Text>}
+        {!!error && <Text accessibilityRole="alert" style={styles.formFeedback}>{error}</Text>}
+        {authenticated && !loading && !error && visibleRoutes.length === 0 && (
+          <Text style={styles.formCopy}>No tienes rutas {filter === 'all' ? 'guardadas' : filter === 'public' ? 'públicas' : 'privadas'} todavía.</Text>
+        )}
+        {visibleRoutes.map((route, index) => (
+          <UserRouteCard key={route.id} route={route} index={index} onPress={() => navigate('detail')} />
         ))}
         <PrimaryButton label="Nueva ruta" icon="+" onPress={() => navigate('record')} />
       </View>
@@ -430,7 +494,32 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
   );
 }
 
-function PointScreen({ navigate, elapsed }: { navigate: (screen: ScreenId) => void; elapsed: number }) {
+const POINT_CATEGORIES = [
+  { label: 'Campamento', type: 'campamento' as const },
+  { label: 'Descanso', type: 'descanso' as const },
+  { label: 'Agua', type: 'agua' as const },
+  { label: 'Tienda', type: 'tienda' as const },
+  { label: 'Otro', type: 'otro' as const },
+];
+
+function PointScreen({ navigate, recording }: { navigate: (screen: ScreenId) => void; recording: ReturnType<typeof useRecording> }) {
+  const [category, setCategory] = useState(POINT_CATEGORIES[0]);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const savePoint = () => {
+    const saved = recording.addPlace({
+      type: category.type,
+      label: category.label,
+      name: name.trim() || category.label,
+      description: description.trim(),
+    });
+    if (!saved) {
+      setFeedback('Aún no hay una ubicación GPS válida para este punto.');
+      return;
+    }
+    navigate('record');
+  };
   return (
     <>
       <Hero title="Agregar punto" subtitle="Marca un lugar importante en tu ruta" center />
@@ -450,32 +539,42 @@ function PointScreen({ navigate, elapsed }: { navigate: (screen: ScreenId) => vo
             </Text>
           </View>
           <Text selectable style={styles.timer}>
-            {formatElapsed(elapsed)}
+            {formatElapsed(recording.elapsed)}
           </Text>
         </View>
         <Text selectable style={styles.sectionTitle}>
           Tipo de punto
         </Text>
         <View style={styles.pointTypes}>
-          {['Campamento', 'Descanso', 'Agua', 'Tienda', 'Otro'].map((item, index) => (
-            <View key={item} style={[styles.pointType, index === 0 && styles.pointTypeActive]}>
-              <Text selectable style={[styles.pointLetter, index === 0 && styles.greenText]}>
-                {item[0]}
+          {POINT_CATEGORIES.map(item => (
+            <Pressable key={item.type} accessibilityRole="button" accessibilityState={{ selected: category.type === item.type }} onPress={() => setCategory(item)} style={[styles.pointType, category.type === item.type && styles.pointTypeActive]}>
+              <Text selectable style={[styles.pointLetter, category.type === item.type && styles.greenText]}>
+                {item.label[0]}
               </Text>
               <Text selectable style={styles.pointText}>
-                {item}
+                {item.label}
               </Text>
-            </View>
+            </Pressable>
           ))}
         </View>
         <Text selectable style={styles.sectionTitle}>
           Nombre del punto
         </Text>
-        <Field icon="C" text="Ej. Campamento Base, Mirador, etc." />
+        <Field icon="C" text="Ej. Campamento Base, Mirador, etc." value={name} onChangeText={setName} autoCapitalize="words" />
         <Text selectable style={styles.sectionTitle}>
           Descripcion <Text style={styles.lightText}>(opcional)</Text>
         </Text>
-        <TextArea text="Escribe una breve descripcion de este lugar..." count="0/200" />
+        <TextInput
+          accessibilityLabel="Descripción del punto"
+          maxLength={200}
+          multiline
+          onChangeText={setDescription}
+          placeholder="Escribe una breve descripción de este lugar..."
+          placeholderTextColor="#7d8683"
+          style={styles.textArea}
+          value={description}
+        />
+        {!!feedback && <Text accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
         <View style={styles.services}>
           <Text selectable style={styles.formTitle}>
             Servicios disponibles
@@ -499,7 +598,7 @@ function PointScreen({ navigate, elapsed }: { navigate: (screen: ScreenId) => vo
             ))}
           </View>
         </View>
-        <PrimaryButton label="Guardar punto" icon="P" onPress={() => navigate('record')} />
+        <PrimaryButton label="Guardar punto" icon="P" onPress={savePoint} />
         <SecondaryButton label="Continuar ruta" icon=">" onPress={() => navigate('record')} />
       </View>
     </>
@@ -550,6 +649,14 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
           <SmallMetric value={formatElapsed(recording.elapsed)} label="Tiempo activo" />
           <SmallMetric value={String(recording.track.points.length)} label="Coordenadas" />
         </View>
+        <Text selectable style={styles.sectionTitle}>Puntos guardados</Text>
+        {recording.places.length === 0 ? (
+          <Text selectable style={styles.formCopy}>No agregaste puntos a esta ruta.</Text>
+        ) : (
+          <View style={styles.chipCloud}>
+            {recording.places.map(place => <Pill key={place.id} label={place.label} tone="green" small />)}
+          </View>
+        )}
         {!!recording.error && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{recording.error}</Text>}
         <Text selectable style={styles.sectionTitle}>
           Foto principal
@@ -593,17 +700,21 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
           <Visibility title="Publica" active />
           <Visibility title="Privada" />
         </View>
+        <SecondaryButton label="Consultar puntos guardados" onPress={() => navigate('detail')} />
         <SecondaryButton label="Volver a Mis rutas" onPress={() => navigate('routes')} />
       </View>
     </>
   );
 }
 
-function DetailScreen({ navigate, routeId }: { navigate: (screen: ScreenId) => void; routeId?: string }) {
+function DetailScreen({ navigate, route, recordedPlaces }: { navigate: (screen: ScreenId) => void; route: PublicRoute | null; recordedPlaces: ReturnType<typeof useRecording>['places'] }) {
+  const name = route?.name ?? 'Ruta sin nombre';
+  const duration = formatMinutes(route?.estimated_duration_minutes ?? null);
+  const distance = formatDistance(route?.total_distance_m ?? 0);
   return (
     <View style={styles.detailContent}>
       <View style={styles.detailBar}>
-        <RoundButton label="<" onPress={() => navigate('routes')} />
+        <RoundButton label="<" onPress={() => navigate('home')} />
         <Text selectable style={styles.detailHeader}>
           Detalle de ruta
         </Text>
@@ -611,49 +722,50 @@ function DetailScreen({ navigate, routeId }: { navigate: (screen: ScreenId) => v
           ⋮
         </Text>
       </View>
-      <Photo hero />
+      <RouteImage path={route?.main_image_path ?? null} seed={0} hero />
       <View style={styles.rowBetween}>
         <View style={styles.flex}>
           <Text selectable style={styles.bigRouteTitle}>
-            Laguna Escondida
+            {name}
           </Text>
           <Text selectable style={styles.owner}>
-            Por Andes Explorer
+            Ruta pública
           </Text>
         </View>
         <Pill label="Publica" tone="green" small />
       </View>
       <View style={styles.summary}>
-        <SmallMetric value="12.4 km" label="Distancia" />
-        <SmallMetric value="5 h 30 min" label="Duracion" />
-        <SmallMetric value="Novato" label="Dificultad" />
+        <SmallMetric value={distance} label="Distancia" />
+        <SmallMetric value={duration} label="Duracion" />
+        <SmallMetric value={route?.difficulty ?? 'Sin definir'} label="Dificultad" />
       </View>
       <View style={styles.actions}>
         <PrimaryButton label="Descargar" icon="D" flex />
         <SecondaryButton label="Guardar" icon="B" flex />
       </View>
       <Panel title="Mapa de la ruta">
-        {routeId
-          ? <RouteDetailMap routeId={routeId} />
+        {route
+          ? <RouteDetailMap routeId={route.id} />
           : <Text selectable style={styles.formCopy}>Selecciona una ruta guardada para cargar su recorrido real.</Text>}
       </Panel>
       <Panel title="Equipo indispensable">
         <ChipCloud items={['Mochila', 'Botas de trekking', 'Agua (2L+)', 'Ropa termica', 'Impermeable', 'Bastones']} />
       </Panel>
       <Panel title="Puntos de la ruta">
-        {['Inicio', 'Campamento 1', 'Mirador', 'Final - Laguna Escondida'].map((item, index) => (
-          <View key={item} style={styles.pointRow}>
+        {!recordedPlaces.length && <Text selectable style={styles.formCopy}>Esta ruta todavía no tiene puntos registrados.</Text>}
+        {recordedPlaces.map((place, index) => (
+          <View key={place.id} style={styles.pointRow}>
             <View style={styles.pointDot} />
             <View style={styles.flex}>
               <Text selectable style={styles.pointRowTitle}>
-                {item}
+                {place.name}
               </Text>
               <Text selectable style={styles.pointRowCopy}>
-                Altitud: {2450 + index * 320} m
+                {place.label}{place.description ? ` · ${place.description}` : ''}
               </Text>
             </View>
             <Text selectable style={styles.pointRowTrail}>
-              {index === 0 ? '0.0 km' : '⌄'}
+              #{index + 1}
             </Text>
           </View>
         ))}
@@ -675,17 +787,77 @@ function DetailScreen({ navigate, routeId }: { navigate: (screen: ScreenId) => v
   );
 }
 
-function SearchBox({ text }: { text: string }) {
+function SearchBox({ value, onChangeText }: { value: string; onChangeText: (value: string) => void }) {
   return (
     <View style={styles.search}>
       <Text selectable style={styles.searchIcon}>
         Q
       </Text>
-      <Text selectable style={styles.placeholder}>
-        {text}
-      </Text>
+      <TextInput
+        accessibilityLabel="Buscar rutas"
+        autoCapitalize="none"
+        onChangeText={onChangeText}
+        placeholder="Buscar rutas o lugares..."
+        placeholderTextColor="#7d8683"
+        style={styles.searchInput}
+        value={value}
+      />
+      {!!value && <Pressable accessibilityLabel="Limpiar búsqueda" accessibilityRole="button" onPress={() => onChangeText('')}><Text style={styles.fieldTrail}>Limpiar</Text></Pressable>}
     </View>
   );
+}
+
+function FilterPill({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={[styles.pill, selected && styles.selectedPill]}>
+      <Text style={[styles.pillText, selected && styles.selectedPillText]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function PublicRouteCard({ route, index, onPress }: { route: PublicRoute; index: number; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={`Ver detalle de ${route.name ?? 'ruta'}`} onPress={onPress} style={({ pressed }) => [styles.routeCard, pressed && styles.pressed]}>
+      <RouteImage path={route.main_image_path} seed={index} />
+      <View style={styles.flex}>
+        <Text selectable style={styles.routeTitle}>{route.name ?? 'Ruta sin nombre'}</Text>
+        <Text selectable numberOfLines={2} style={styles.owner}>{route.description || 'Ruta pública para explorar'}</Text>
+        <View style={styles.meta}>
+          <Text selectable style={styles.metaText}>{formatDistance(route.total_distance_m)}</Text>
+          <Text selectable style={styles.metaText}>{formatMinutes(route.estimated_duration_minutes)}</Text>
+        </View>
+      </View>
+      <Pill label={route.difficulty ?? 'Sin definir'} tone="green" small />
+    </Pressable>
+  );
+}
+
+function RouteImage({ path, seed, wide, tall, hero }: { path: string | null; seed: number; wide?: boolean; tall?: boolean; hero?: boolean }) {
+  if (!path) return <Photo seed={seed} wide={wide} tall={tall} hero={hero} />;
+  return <RouteImageSource key={path} path={path} seed={seed} wide={wide} tall={tall} hero={hero} />;
+}
+
+function RouteImageSource({ path, seed, wide, tall, hero }: { path: string; seed: number; wide?: boolean; tall?: boolean; hero?: boolean }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    getPublicRouteImageUrl(path).then(value => { if (active) setUrl(value); }).catch(() => { if (active) setUrl(null); });
+    return () => { active = false; };
+  }, [path]);
+  if (!url || failed) return <Photo seed={seed} wide={wide} tall={tall} hero={hero} />;
+  return <Image accessibilityLabel="Fotografía principal de la ruta" onError={() => setFailed(true)} resizeMode="cover" source={{ uri: url }} style={[styles.photo, wide && styles.photoWide, tall && styles.photoTall, hero && styles.photoHero]} />;
+}
+
+function formatDistance(meters: number) {
+  return meters > 0 ? `${(meters / 1000).toFixed(1)} km` : 'Distancia no registrada';
+}
+
+function formatMinutes(minutes: number | null) {
+  if (!minutes) return 'Duración no registrada';
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return hours ? `${hours} h${remainder ? ` ${remainder} min` : ''}` : `${remainder} min`;
 }
 
 function Field({ icon, text, trail, value, onChangeText, keyboardType, autoCapitalize, secure }: {
@@ -760,53 +932,26 @@ function Pill({ label, tone = 'neutral', small }: { label: string; tone?: string
   );
 }
 
-function RouteCard({ route, index, onPress }: { route: string[]; index: number; onPress?: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.routeCard, pressed && styles.pressed]}>
-      <Photo seed={index} />
-      <View style={styles.flex}>
-        <Text selectable style={styles.routeTitle}>
-          {route[0]}
-        </Text>
-        <Text selectable style={styles.owner}>
-          Por {route[1]}
-        </Text>
-        <View style={styles.meta}>
-          <Text selectable style={styles.metaText}>
-            {route[2]}
-          </Text>
-          <Text selectable style={styles.metaText}>
-            {route[3]}
-          </Text>
-        </View>
-      </View>
-      <Text selectable style={styles.heart}>
-        ♡
-      </Text>
-    </Pressable>
-  );
-}
-
-function OwnedCard({ route, index, privateRoute, onPress }: { route: string[]; index: number; privateRoute?: boolean; onPress?: () => void }) {
+function UserRouteCard({ route, index, onPress }: { route: UserRoute; index: number; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.ownedCard, pressed && styles.pressed]}>
-      <Photo seed={index} tall />
+      <RouteImage path={route.main_image_path} seed={index} tall />
       <View style={styles.flex}>
         <View style={styles.rowBetween}>
           <Text selectable style={styles.routeTitle}>
-            {route[0]}
+            {route.name ?? 'Ruta sin nombre'}
           </Text>
-          <Pill label={privateRoute ? 'Privada' : 'Publica'} tone={privateRoute ? 'sand' : 'green'} small />
+          <Pill label={route.visibility === 'public' ? 'Pública' : 'Privada'} tone={route.visibility === 'public' ? 'green' : 'sand'} small />
         </View>
         <Text selectable style={styles.owner}>
-          Parque Nacional Huascaran
+          {route.status === 'published' ? 'Publicada' : route.status === 'draft' ? 'Borrador' : 'En grabación'}
         </Text>
         <View style={styles.meta}>
           <Text selectable style={styles.metaText}>
-            {route[2]}
+            {formatDistance(route.total_distance_m)}
           </Text>
           <Text selectable style={styles.metaText}>
-            {route[3]}
+            {formatMinutes(route.estimated_duration_minutes)}
           </Text>
         </View>
         <View style={styles.detailButton}>
@@ -920,20 +1065,6 @@ function BottomTabs({ active, navigate }: { active: string; navigate: (screen: S
           </Text>
           <View style={[styles.tabLine, { opacity: active === item ? 1 : 0 }]} />
         </Pressable>
-      ))}
-    </View>
-  );
-}
-
-function Segmented({ values }: { values: string[] }) {
-  return (
-    <View style={styles.segmented}>
-      {values.map((item, index) => (
-        <View key={item} style={[styles.segment, index === 0 && styles.segmentActive]}>
-          <Text selectable style={[styles.segmentText, index === 0 && styles.segmentTextActive]}>
-            {item}
-          </Text>
-        </View>
       ))}
     </View>
   );
@@ -1143,14 +1274,17 @@ const styles = StyleSheet.create({
   },
   searchIcon: { color: '#1d2b27', fontSize: 20, fontWeight: '900' },
   placeholder: { color: '#7d8683', fontSize: 16, flex: 1 },
+  searchInput: { color: '#17221d', fontSize: 16, flex: 1, minWidth: 0, paddingVertical: 12 },
   pillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   pill: { minHeight: 36, minWidth: 98, paddingHorizontal: 14, borderRadius: 18, backgroundColor: '#eef1ef', alignItems: 'center', justifyContent: 'center' },
+  selectedPill: { backgroundColor: '#1f6a43' },
   pillSmall: { minWidth: 74, minHeight: 32 },
   greenPill: { backgroundColor: '#dcefe4' },
   bluePill: { backgroundColor: '#dce5ff' },
   redPill: { backgroundColor: '#f8dedc' },
   sandPill: { backgroundColor: '#f1eadc' },
   pillText: { color: '#4c5752', fontSize: 13, fontWeight: '900' },
+  selectedPillText: { color: '#fff' },
   greenText: { color: '#155136' },
   blueText: { color: '#1550b8' },
   redText: { color: '#9b1d1e' },
