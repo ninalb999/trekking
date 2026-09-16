@@ -2,21 +2,22 @@ import * as Crypto from 'expo-crypto';
 import * as ImagePicker from 'expo-image-picker';
 
 import { getSupabase } from '@/lib/supabase';
+import {
+  assertRouteImageSize,
+  isUuid,
+  routeImageExtension,
+  routeImageMime,
+  type RouteImageMime,
+} from '@/lib/route-image-validation';
 
 const ROUTE_IMAGES_BUCKET = 'route-images';
 
 export type RouteImageSelection = {
   uri: string;
-  contentType: string;
+  contentType: RouteImageMime;
   extension: string;
+  fileSize?: number;
 };
-
-function extensionFor(asset: ImagePicker.ImagePickerAsset) {
-  const fromName = asset.fileName?.split('.').at(-1)?.toLowerCase();
-  const fromMime = asset.mimeType?.split('/').at(-1)?.toLowerCase();
-  const extension = fromName || fromMime || 'jpg';
-  return extension === 'jpeg' ? 'jpg' : extension.replace(/[^a-z0-9]/g, '') || 'jpg';
-}
 
 export async function pickRouteImage(): Promise<RouteImageSelection | null> {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -31,32 +32,59 @@ export async function pickRouteImage(): Promise<RouteImageSelection | null> {
   if (result.canceled) return null;
 
   const asset = result.assets[0];
-  const extension = extensionFor(asset);
+  const contentType = routeImageMime(asset.mimeType, asset.fileName);
+  assertRouteImageSize(asset.fileSize);
   return {
     uri: asset.uri,
-    extension,
-    contentType: asset.mimeType || `image/${extension === 'jpg' ? 'jpeg' : extension}`,
+    extension: routeImageExtension(contentType),
+    contentType,
+    fileSize: asset.fileSize,
   };
 }
 
 export async function uploadRouteMainImage(routeId: string, image: RouteImageSelection) {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(routeId)) {
+  if (!isUuid(routeId)) {
     throw new Error('La ruta debe estar guardada antes de subir su fotografía.');
   }
+  const contentType = routeImageMime(image.contentType);
+  assertRouteImageSize(image.fileSize);
+
+  const supabase = getSupabase();
+  const { data: route, error: routeError } = await supabase
+    .from('routes')
+    .select('main_image_path')
+    .eq('id', routeId)
+    .maybeSingle();
+  if (routeError) throw routeError;
+  if (!route) throw new Error('No se encontró una ruta propia para asociar la fotografía.');
 
   const response = await fetch(image.uri);
   if (!response.ok) throw new Error('No se pudo leer la fotografía seleccionada.');
-  const path = `${routeId}/${Crypto.randomUUID()}.${image.extension}`;
-  const supabase = getSupabase();
+  const contents = await response.arrayBuffer();
+  assertRouteImageSize(contents.byteLength);
+  const path = `${routeId}/${Crypto.randomUUID()}.${routeImageExtension(contentType)}`;
   const { error: uploadError } = await supabase.storage
     .from(ROUTE_IMAGES_BUCKET)
-    .upload(path, await response.arrayBuffer(), { contentType: image.contentType, upsert: false });
+    .upload(path, contents, { contentType, upsert: false });
   if (uploadError) throw uploadError;
 
-  const { error: updateError } = await supabase.from('routes').update({ main_image_path: path }).eq('id', routeId);
-  if (updateError) {
-    await supabase.storage.from(ROUTE_IMAGES_BUCKET).remove([path]);
-    throw updateError;
+  const { data: updatedRoute, error: updateError } = await supabase
+    .from('routes')
+    .update({ main_image_path: path })
+    .eq('id', routeId)
+    .select('id')
+    .maybeSingle();
+  if (updateError || !updatedRoute) {
+    const { error: rollbackError } = await supabase.storage.from(ROUTE_IMAGES_BUCKET).remove([path]);
+    if (rollbackError) throw new Error('No se pudo asociar ni retirar la fotografía subida.');
+    if (updateError) throw updateError;
+    throw new Error('La ruta dejó de estar disponible antes de asociar la fotografía.');
   }
-  return path;
+
+  let replacementCleanupFailed = false;
+  if (route.main_image_path && route.main_image_path !== path) {
+    const { error } = await supabase.storage.from(ROUTE_IMAGES_BUCKET).remove([route.main_image_path]);
+    replacementCleanupFailed = Boolean(error);
+  }
+  return { path, replacementCleanupFailed };
 }

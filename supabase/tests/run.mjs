@@ -258,7 +258,14 @@ try {
       await as(role, uid, async () => assert.equal(await count('storage.objects', 'name=$1', [privateImage]), 0));
     }
     await as('authenticated', a, async () => assert.equal(await count('storage.objects', 'name=$1', [privateImage]), 1));
-    assert.equal((await rows("select public from storage.buckets where id='route-images'"))[0].public, false);
+    assert.deepEqual(
+      (await rows("select public,file_size_limit,allowed_mime_types from storage.buckets where id='route-images'"))[0],
+      {
+        public: false,
+        file_size_limit: '5242880',
+        allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp'],
+      },
+    );
   });
   await test('12 Public photo metadata readable; privatizing route immediately revokes SQL access', async () => {
     await as('anon', null, async () => assert.equal(await count('storage.objects', 'name=$1', [publicImage]), 1));
