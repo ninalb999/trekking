@@ -11,6 +11,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRecording } from '../hooks/use-recording';
 import { formatElapsed } from '../lib/recording';
 import RouteMap from './route-map';
+import { useSession } from '../hooks/use-session';
+import { AuthForm } from './auth-form';
+import { PointForm, FinishForm, SavedRoutes, SavedRouteDetail } from './route-workflow';
+import type { RouteData } from '../lib/route-data';
+import { useKeepAwake } from 'expo-keep-awake';
 
 type ScreenId = 'home' | 'login' | 'register' | 'routes' | 'record' | 'point' | 'finish' | 'detail';
 
@@ -34,7 +39,9 @@ const ROUTES = [
 ];
 
 export function TrekkingPrototype() {
-  const recording = useRecording();
+  const session = useSession();
+  const recording = useRecording(session?.user.id ?? null);
+  const [selectedRoute, setSelectedRoute] = useState<RouteData | null>(null);
   const [screen, setCurrentScreen] = useState<ScreenId>('login');
   const [activeTab, setActiveTab] = useState('Inicio');
   const insets = useSafeAreaInsets();
@@ -61,13 +68,16 @@ export function TrekkingPrototype() {
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="never">
         {screen === 'home' && <HomeScreen navigate={setScreen} />}
-        {screen === 'login' && <LoginScreen navigate={setScreen} />}
-        {screen === 'register' && <RegisterScreen navigate={setScreen} />}
-        {screen === 'routes' && <MyRoutesScreen navigate={setScreen} />}
+        {screen === 'login' && <AuthForm register={false} navigate={setScreen} signedIn={!!session} />}
+        {screen === 'register' && <AuthForm register navigate={setScreen} signedIn={!!session} />}
+        {screen === 'routes' && <SavedRoutes ownerId={session?.user.id ?? null} message={recording.saveStatus} create={() => setScreen('record')} open={route => {
+          if (route.status !== 'finished' || !route.name) { recording.restore(route); setScreen(route.status === 'finished' ? 'finish' : 'record'); }
+          else { setSelectedRoute(route); setScreen('detail'); }
+        }} />}
         {screen === 'record' && <RecordingScreen navigate={setScreen} recording={recording} />}
-        {screen === 'point' && <PointScreen navigate={setScreen} elapsed={recording.elapsed} />}
-        {screen === 'finish' && <FinishScreen navigate={setScreen} recording={recording} />}
-        {screen === 'detail' && <DetailScreen navigate={setScreen} />}
+        {screen === 'point' && <PointForm recording={recording} back={() => setScreen('record')} />}
+        {screen === 'finish' && <FinishForm recording={recording} done={() => setScreen('routes')} />}
+        {screen === 'detail' && (selectedRoute ? <SavedRouteDetail route={selectedRoute} back={() => { setSelectedRoute(null); setScreen('routes'); }} /> : <DetailScreen navigate={setScreen} />)}
         </ScrollView>
         {!isAuth && (
           <View style={{ paddingBottom: insets.bottom, backgroundColor: '#fff', flexShrink: 0 }}>
@@ -247,6 +257,7 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
   const active = track.status === 'recording';
   return (
     <>
+      {active && <KeepRecordingAwake />}
       <Hero title="Grabando ruta" subtitle="Explora. Camina. Comparte." />
       <View style={styles.content}>
         <View style={styles.banner}>
@@ -267,8 +278,11 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
         </View>
         <RouteMap
           points={[...track.points]}
-          dom={{ useExpoDOMWebView: false, style: { height: 342 }, scrollEnabled: false }}
+          location={recording.location}
+          places={recording.places}
         />
+        <Text style={styles.formCopy}>{recording.quality}</Text>
+        {!!recording.saveStatus && <Text style={styles.formCopy}>{recording.saveStatus}</Text>}
         {!!error && <Text accessibilityRole="alert" style={styles.formCopy}>{error}</Text>}
         <Pressable accessibilityRole="button" disabled={busy} onPress={active ? pause : () => void begin()} style={[styles.detailButton, busy && { opacity: 0.5 }]}>
           <Text style={styles.detailButtonText}>{busy ? 'Buscando GPS...' : active ? 'Pausar ruta' : track.status === 'paused' ? 'Continuar ruta' : 'Iniciar grabacion'}</Text>
@@ -289,6 +303,8 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
     </>
   );
 }
+
+function KeepRecordingAwake() { useKeepAwake(); return null; }
 
 function PointScreen({ navigate, elapsed }: { navigate: (screen: ScreenId) => void; elapsed: number }) {
   return (

@@ -1,0 +1,116 @@
+import { useEffect, useRef, useState } from 'react';
+import { Text, View, Pressable } from 'react-native';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import { File, Paths } from 'expo-file-system';
+import { randomUUID } from 'expo-crypto';
+import { useRecording } from '../hooks/use-recording';
+import { formatElapsed } from '../lib/recording';
+import type { RouteData } from '../lib/route-data';
+import { loadLocalRoutes } from '../lib/local-routes';
+import { refreshRoutes } from '../lib/cloud-routes';
+import { Action, Choices, Input, ui } from './route-controls';
+import RouteMap from './route-map';
+
+type Recorder = ReturnType<typeof useRecording>;
+const types: Record<string, string> = { Campamento: 'campamento', Descanso: 'descanso', Agua: 'agua', Tienda: 'tienda', Otro: 'otro' };
+const services: Record<string, string> = { Agua: 'water', Senal: 'signal', Alojamiento: 'lodging', Tienda: 'shop' };
+const toggle = (items: string[], value: string) => items.includes(value) ? items.filter(item => item !== value) : [...items, value];
+
+export function PointForm({ recording, back }: { recording: Recorder; back: () => void }) {
+  const [name, setName] = useState(''), [description, setDescription] = useState(''), [type, setType] = useState('Campamento');
+  const [selected, setSelected] = useState<string[]>([]), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const saving = useRef(false);
+  async function save() {
+    if (saving.current) return; saving.current = true; setBusy(true);
+    try { await recording.addPlace({ name: name.trim(), description: description.trim(), type: types[type], services: selected.map(value => services[value]) }); back(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'No se pudo guardar el punto.'); }
+    finally { saving.current = false; setBusy(false); }
+  }
+  return <View style={ui.content}>
+    <Text style={ui.title}>Agregar punto</Text><Text style={ui.muted}>Ruta en pausa · {formatElapsed(recording.elapsed)}</Text>
+    <Text style={ui.label}>Tipo de punto</Text><Choices values={Object.keys(types)} selected={[type]} onSelect={setType} />
+    <Input label="Nombre del punto" value={name} onChangeText={setName} maxLength={100} placeholder="Ej. Mirador del valle" />
+    <Input label="Descripcion del punto" value={description} onChangeText={setDescription} multiline maxLength={200} />
+    <Text style={ui.label}>Servicios disponibles</Text><Choices values={Object.keys(services)} selected={selected} onSelect={value => setSelected(toggle(selected, value))} multiple />
+    <Text style={ui.muted}>{recording.location ? `${recording.location.latitude.toFixed(6)}, ${recording.location.longitude.toFixed(6)}` : 'Sin ubicacion'}</Text>
+    {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
+    <Action label={busy ? 'Guardando punto...' : 'Guardar punto'} disabled={busy} onPress={() => void save()} />
+    <Action label="Continuar sin agregar" disabled={busy} onPress={back} />
+  </View>;
+}
+
+export function FinishForm({ recording, done }: { recording: Recorder; done: () => void }) {
+  const data = recording.snapshot();
+  const [name, setName] = useState(data.name), [description, setDescription] = useState(data.description);
+  const [difficulty, setDifficulty] = useState(data.difficulty), [visibility, setVisibility] = useState(data.visibility);
+  const [equipment, setEquipment] = useState(data.equipment), [photo, setPhoto] = useState(data.photo);
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const saving = useRef(false);
+  async function choosePhoto() {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.5, allowsEditing: true, base64: process.env.EXPO_OS === 'web' });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (process.env.EXPO_OS === 'web') setPhoto(`data:${asset.mimeType ?? 'image/jpeg'};base64,${asset.base64}`);
+      else { const file = new File(Paths.document, `trekking-${randomUUID()}.jpg`); new File(asset.uri).copy(file); setPhoto(file.uri); }
+    } catch { setError('No se pudo cargar la fotografia.'); }
+  }
+  async function save() {
+    if (saving.current) return; saving.current = true; setBusy(true); setError('');
+    try { await recording.save({ name: name.trim(), description: description.trim(), difficulty, visibility, equipment, photo }); done(); }
+    catch (e) { setError(e instanceof Error ? e.message : 'No se pudo guardar.'); }
+    finally { saving.current = false; setBusy(false); }
+  }
+  return <View style={ui.content}>
+    <Text style={ui.title}>Guardar ruta</Text>
+    <Text style={ui.label}>{(data.distance / 1000).toFixed(2)} km · {formatElapsed(data.elapsed)} · {data.places.length} puntos</Text>
+    <RouteMap points={data.points} places={data.places} />
+    {photo && <Image source={photo} style={{ width: '100%', height: 160 }} contentFit="cover" />}
+    <Action label={photo ? 'Cambiar foto' : 'Agregar foto'} onPress={() => void choosePhoto()} />
+    <Input label="Nombre de la ruta" value={name} onChangeText={setName} maxLength={100} placeholder="Ej. Sendero del valle" />
+    <Input label="Descripcion de la ruta" value={description} onChangeText={setDescription} multiline maxLength={500} />
+    <Text style={ui.label}>Dificultad</Text><Choices values={['Novato', 'Intermedio', 'Experto']} selected={[difficulty]} onSelect={setDifficulty} />
+    <Text style={ui.label}>Equipo indispensable</Text><Choices multiple values={['Agua', 'Botas', 'Mochila', 'Ropa termica', 'Bastones', 'Proteccion solar', 'Mapa/GPS']} selected={equipment} onSelect={value => setEquipment(toggle(equipment, value))} />
+    <Text style={ui.label}>Visibilidad</Text><Choices values={['Privada', 'Publica']} selected={[visibility === 'private' ? 'Privada' : 'Publica']} onSelect={value => setVisibility(value === 'Privada' ? 'private' : 'public')} />
+    {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
+    <Action label={busy ? 'Guardando ruta...' : 'Guardar ruta'} disabled={busy} onPress={() => void save()} />
+  </View>;
+}
+
+export function SavedRoutes({ ownerId, open, create, message }: { ownerId: string | null; open: (route: RouteData) => void; create: () => void; message: string }) {
+  const [routes, setRoutes] = useState<RouteData[]>([]), [filter, setFilter] = useState('Todas'), [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const mounted = useRef(true);
+  async function refresh() {
+    if (busy) return; setBusy(true); setError('');
+    try { const local = await loadLocalRoutes(ownerId); if (mounted.current) setRoutes(local); const updated = await refreshRoutes(ownerId); if (mounted.current) setRoutes(updated); }
+    catch { if (mounted.current) setError('Mostrando copia local. No se pudo sincronizar; puedes reintentar.'); }
+    finally { if (mounted.current) setBusy(false); }
+  }
+  useEffect(() => { mounted.current = true; void refresh(); return () => { mounted.current = false; }; }, [ownerId]);
+  return <View style={ui.content}>
+    <Text style={ui.title}>Mis rutas</Text>{!!message && <Text accessibilityLiveRegion="polite" style={ui.muted}>{message}</Text>}
+    <Choices values={['Todas', 'Publicas', 'Privadas']} selected={[filter]} onSelect={setFilter} />
+    {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
+    <Action label={busy ? 'Sincronizando...' : 'Sincronizar'} disabled={busy || !ownerId} onPress={() => void refresh()} />
+    {!ownerId && <Text style={ui.muted}>Inicia sesion para sincronizar tus rutas entre dispositivos.</Text>}
+    {routes.filter(route => filter === 'Todas' || route.visibility === (filter === 'Publicas' ? 'public' : 'private')).map(route =>
+      <Pressable key={route.id} accessibilityRole="button" accessibilityLabel={`Abrir ${route.name || 'Recorrido pendiente'}`} onPress={() => open(route)} style={{ padding: 14, gap: 8, borderBottomWidth: 1, borderColor: '#d5dfd7' }}>
+        <Text style={ui.label}>{route.name || 'Recorrido pendiente'}</Text><Text>{(route.distance / 1000).toFixed(2)} km · {formatElapsed(route.elapsed)}</Text>
+        <Text style={ui.muted}>{route.status === 'finished' ? 'Finalizada' : 'Continuar recorrido'} · {route.syncedAt === route.updatedAt ? 'Sincronizada' : 'Copia local'}</Text>
+      </Pressable>)}
+    {!routes.length && <Text style={ui.muted}>Todavia no tienes rutas guardadas.</Text>}
+    <Action label="Grabar ruta" onPress={create} />
+  </View>;
+}
+export function SavedRouteDetail({ route, back }: { route: RouteData; back: () => void }) {
+  return <View style={ui.content}><Action label="Volver a Mis rutas" onPress={back} /><Text style={ui.title}>{route.name}</Text>
+    <Text>{(route.distance / 1000).toFixed(2)} km · {formatElapsed(route.elapsed)} · {route.difficulty}</Text>
+    {route.photo && <Image source={route.photo} style={{ height: 180, width: '100%' }} />}
+    <RouteMap points={route.points} places={route.places} /><Text>{route.description}</Text>
+    <Text style={ui.label}>Equipo</Text><Text>{route.equipment.join(', ') || 'Sin equipo indicado'}</Text>
+    <Text style={ui.label}>Puntos del recorrido</Text>
+    {route.places.map(place => <View key={place.id} style={{ gap: 6 }}><Text style={ui.label}>{place.name}</Text><Text>{place.description}</Text><Text>{place.type} · {place.services.join(', ')}</Text><Text>{place.latitude.toFixed(6)}, {place.longitude.toFixed(6)}</Text></View>)}
+  </View>;
+}
