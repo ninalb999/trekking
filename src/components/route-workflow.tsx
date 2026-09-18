@@ -80,7 +80,13 @@ export function SavedRoutes({ ownerId, open, create, message }: { ownerId: strin
   const mounted = useRef(true);
   async function refresh() {
     if (busy) return; setBusy(true); setError('');
-    try { const local = await loadLocalRoutes(ownerId); if (mounted.current) setRoutes(local); const updated = await refreshRoutes(ownerId); if (mounted.current) setRoutes(updated); }
+    try {
+      const local = await loadLocalRoutes(ownerId);
+      if (mounted.current) setRoutes(local);
+      if (!ownerId) return;
+      const updated = await refreshRoutes(ownerId);
+      if (mounted.current) setRoutes(updated);
+    }
     catch { if (mounted.current) setError('Mostrando copia local. No se pudo sincronizar; puedes reintentar.'); }
     finally { if (mounted.current) setBusy(false); }
   }
@@ -96,13 +102,16 @@ export function SavedRoutes({ ownerId, open, create, message }: { ownerId: strin
     <Text style={ui.title}>Mis rutas</Text>{!!message && <Text accessibilityLiveRegion="polite" style={ui.muted}>{message}</Text>}
     <Choices values={['Todas', 'Publicas', 'Privadas']} selected={[filter]} onSelect={setFilter} />
     {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
-    <Action label={busy ? 'Sincronizando...' : 'Sincronizar'} disabled={busy || !ownerId} onPress={() => void refresh()} />
+    <Action label={busy ? 'Sincronizando...' : ownerId ? 'Sincronizar con Supabase' : 'Actualizar copia local'} disabled={busy} onPress={() => void refresh()} />
     {!ownerId && <Text style={ui.muted}>Inicia sesion para sincronizar tus rutas entre dispositivos.</Text>}
-    {routes.filter(route => filter === 'Todas' || route.visibility === (filter === 'Publicas' ? 'public' : 'private')).map(route =>
+    {routes.filter(route => filter === 'Todas' || route.visibility === (filter === 'Publicas' ? 'public' : 'private')).map(route => {
+      const pending = route.syncedAt !== route.updatedAt;
+      return (
       <Pressable key={route.id} accessibilityRole="button" accessibilityLabel={`Abrir ${route.name || 'Recorrido pendiente'}`} onPress={() => open(route)} style={{ padding: 14, gap: 8, borderBottomWidth: 1, borderColor: '#d5dfd7' }}>
         <Text style={ui.label}>{route.name || 'Recorrido pendiente'}</Text><Text>{(route.distance / 1000).toFixed(2)} km · {formatElapsed(route.elapsed)}</Text>
-        <Text style={ui.muted}>{route.status === 'finished' ? 'Finalizada' : 'Continuar recorrido'} · {route.syncedAt === route.updatedAt ? 'Sincronizada' : 'Copia local'}</Text>
-      </Pressable>)}
+        <Text style={ui.muted}>{route.status === 'finished' ? 'Finalizada' : 'Continuar recorrido'} · {pending ? 'Pendiente de sincronizar' : 'Sincronizada'} · {route.visibility === 'public' ? 'Publica' : 'Privada'}</Text>
+      </Pressable>
+    );})}
     {!routes.length && <Text style={ui.muted}>Todavia no tienes rutas guardadas.</Text>}
     <Action label="Grabar ruta" onPress={create} />
   </View>;
