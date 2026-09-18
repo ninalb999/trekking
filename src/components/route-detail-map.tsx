@@ -30,8 +30,7 @@ export function RouteDetailMap({ routeId }: { routeId: string }) {
     <RouteMap
       points={mapData.trackPoints.map(point => ({ latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy_m, timestamp: Date.parse(point.recorded_at), segment: point.segment_no }))}
       places={mapData.routePoints.map(point => ({
-        latitude: point.latitude,
-        longitude: point.longitude,
+        ...point,
         name: point.name ?? point.point_type,
         description: point.description ?? undefined,
         type: point.point_type,

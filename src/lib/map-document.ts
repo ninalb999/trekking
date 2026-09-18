@@ -8,7 +8,7 @@ export const mapDocument = `<!doctype html><html><head><meta name="viewport" con
 const map=L.map('map').setView([-16.5,-68.15],12), layer=L.layerGroup().addTo(map);
 let following=true,lastLocation=null,lastKey='';
 const message=document.getElementById('message');
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'})
+L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{subdomains:'abc',maxZoom:17,attribution:'Mapas &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA) &mdash; Datos &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'})
 .on('tileerror',()=>{message.textContent='Mapa sin conexion. El GPS puede seguir grabando.';message.style.display='block';})
 .on('tileload',()=>message.style.display='none').addTo(map);
 map.on('dragstart',()=>following=false);
