@@ -512,6 +512,14 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
           <Metric title="Distancia" value={`${(track.distance / 1000).toFixed(2)} km`} icon="D" />
           <Metric title="Tiempo activo" value={formatElapsed(elapsed)} icon="T" />
         </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={active ? 'Pausar ruta' : track.status === 'paused' ? 'Continuar ruta' : 'Iniciar grabacion'}
+          disabled={busy}
+          onPress={active ? pause : () => void begin()}
+          style={({ pressed }) => [styles.recordAction, busy && styles.disabled, pressed && styles.pressed]}>
+          <Text style={styles.recordActionText}>{busy ? 'Buscando GPS...' : active ? 'Pausar ruta' : track.status === 'paused' ? 'Continuar ruta' : 'Iniciar grabacion'}</Text>
+        </Pressable>
         <RouteMap
           points={[...track.points]}
           location={recording.location}
@@ -520,9 +528,6 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
         <Text style={styles.formCopy}>{recording.quality}</Text>
         {!!recording.saveStatus && <Text style={styles.formCopy}>{recording.saveStatus}</Text>}
         {!!error && <Text accessibilityRole="alert" style={styles.formCopy}>{error}</Text>}
-        <Pressable accessibilityRole="button" disabled={busy} onPress={active ? pause : () => void begin()} style={[styles.detailButton, busy && { opacity: 0.5 }]}>
-          <Text style={styles.detailButtonText}>{busy ? 'Buscando GPS...' : active ? 'Pausar ruta' : track.status === 'paused' ? 'Continuar ruta' : 'Iniciar grabacion'}</Text>
-        </Pressable>
         {(active || track.status === 'paused') && <>
         <View style={styles.actions}>
           <SecondaryButton label="Agregar punto" icon="P" flex onPress={() => navigate('point')} />
@@ -1353,6 +1358,8 @@ const styles = StyleSheet.create({
   ownedCard: { flexDirection: 'row', gap: 12, padding: 10, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e8ece8' },
   detailButton: { minHeight: 36, marginTop: 8, paddingHorizontal: 14, borderRadius: 18, backgroundColor: '#f0f2f1', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   detailButtonText: { color: '#26322e', fontSize: 14, fontWeight: '800' },
+  recordAction: { minHeight: 48, marginTop: 12, marginBottom: 12, paddingHorizontal: 18, borderRadius: 24, backgroundColor: '#1f6a43', alignItems: 'center', justifyContent: 'center', shadowColor: '#123f2d', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  recordActionText: { color: '#fff', fontSize: 15, fontWeight: '900' },
   banner: { minHeight: 70, padding: 14, borderRadius: 18, backgroundColor: '#eaf4ed', flexDirection: 'row', alignItems: 'center', gap: 12 },
   liveDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#16814f' },
   bannerTitle: { color: '#155136', fontSize: 16, fontWeight: '900' },
