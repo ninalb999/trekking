@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRecording } from '../hooks/use-recording';
 import { formatElapsed } from '../lib/recording';
 import { pickRouteImage, type RouteImageSelection } from '../lib/route-images';
-import { RouteDetailMap } from './route-detail-map';
+import DetalleRuta, { type DetalleRutaData } from '@/screens/DetalleRuta';
 import RouteMap from './route-map';
 
 import { getSession, signInWithPassword, signOut, signUp } from '@/lib/auth';
@@ -572,78 +572,19 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
   );
 }
 
-function DetailScreen({ navigate, routeId }: { navigate: (screen: ScreenId) => void; routeId?: string }) {
-  return (
-    <View style={styles.detailContent}>
-      <View style={styles.detailBar}>
-        <RoundButton label="<" onPress={() => navigate('routes')} />
-        <Text selectable style={styles.detailHeader}>
-          Detalle de ruta
-        </Text>
-        <Text selectable style={styles.kebab}>
-          ⋮
-        </Text>
-      </View>
-      <Photo hero />
-      <View style={styles.rowBetween}>
-        <View style={styles.flex}>
-          <Text selectable style={styles.bigRouteTitle}>
-            Laguna Escondida
-          </Text>
-          <Text selectable style={styles.owner}>
-            Por Andes Explorer
-          </Text>
-        </View>
-        <Pill label="Publica" tone="green" small />
-      </View>
-      <View style={styles.summary}>
-        <SmallMetric value="12.4 km" label="Distancia" />
-        <SmallMetric value="5 h 30 min" label="Duracion" />
-        <SmallMetric value="Novato" label="Dificultad" />
-      </View>
-      <View style={styles.actions}>
-        <PrimaryButton label="Descargar" icon="D" flex />
-        <SecondaryButton label="Guardar" icon="B" flex />
-      </View>
-      <Panel title="Mapa de la ruta">
-        {routeId ? <RouteDetailMap routeId={routeId} /> : <MapCard small />}
-      </Panel>
-      <Panel title="Equipo indispensable">
-        <ChipCloud items={['Mochila', 'Botas de trekking', 'Agua (2L+)', 'Ropa termica', 'Impermeable', 'Bastones']} />
-      </Panel>
-      <Panel title="Puntos de la ruta">
-        {['Inicio', 'Campamento 1', 'Mirador', 'Final - Laguna Escondida'].map((item, index) => (
-          <View key={item} style={styles.pointRow}>
-            <View style={styles.pointDot} />
-            <View style={styles.flex}>
-              <Text selectable style={styles.pointRowTitle}>
-                {item}
-              </Text>
-              <Text selectable style={styles.pointRowCopy}>
-                Altitud: {2450 + index * 320} m
-              </Text>
-            </View>
-            <Text selectable style={styles.pointRowTrail}>
-              {index === 0 ? '0.0 km' : '⌄'}
-            </Text>
-          </View>
-        ))}
-      </Panel>
-      <Panel title="Comentarios">
-        <View style={styles.comment}>
-          <View style={styles.avatar} />
-          <View style={styles.flex}>
-            <Text selectable style={styles.commentName}>
-              Camila R.
-            </Text>
-            <Text selectable style={styles.commentCopy}>
-              Increible ruta. Las vistas de la laguna son espectaculares.
-            </Text>
-          </View>
-        </View>
-      </Panel>
-    </View>
-  );
+// Fixture temporal de HU-06.1: todas las tarjetas abren esta misma demostración.
+const DEMO_ROUTE_DETAIL: DetalleRutaData = {
+  name: 'Laguna Escondida',
+  author: 'Andes Explorer',
+  visibility: 'public',
+  distance: '12.4 km',
+  duration: '5 h 30 min',
+  difficulty: 'Novato',
+  description: 'Recorrido de demostración entre senderos de montaña y una laguna. Este texto y las métricas son ejemplos para revisar el diseño; no describen una ruta real.',
+};
+
+function DetailScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+  return <DetalleRuta route={DEMO_ROUTE_DETAIL} onBack={() => navigate('routes')} />;
 }
 
 function SearchBox({ text }: { text: string }) {
@@ -799,29 +740,6 @@ function Photo({ seed = 0, wide, tall, hero }: { seed?: number; wide?: boolean; 
       <View style={[styles.photoHillOne, { borderBottomColor: '#e8d5a4' }]} />
       <View style={[styles.photoHillTwo, { borderBottomColor: hills[seed % hills.length] }]} />
       <View style={styles.photoWater} />
-    </View>
-  );
-}
-
-function MapCard({ recording, small }: { recording?: boolean; small?: boolean }) {
-  return (
-    <View style={[styles.map, small && styles.mapSmall]}>
-      <View style={styles.mapGrid} />
-      <View style={[styles.path, styles.pathOne]} />
-      <View style={[styles.path, styles.pathTwo]} />
-      <View style={[styles.path, styles.pathThree]} />
-      <View style={[styles.mapPin, styles.mapStart]} />
-      <View style={[styles.mapPin, styles.mapEnd]} />
-      {recording && (
-        <View style={styles.location}>
-          <Text selectable style={styles.locationText}>
-            Tu ubicacion
-          </Text>
-        </View>
-      )}
-      <Text selectable style={styles.scale}>
-        0     500 m     1 km
-      </Text>
     </View>
   );
 }
@@ -1019,27 +937,6 @@ function Visibility({ title, active }: { title: string; active?: boolean }) {
         </Text>
       </View>
       <View style={[styles.radio, active && styles.radioActive]} />
-    </View>
-  );
-}
-
-function RoundButton({ label, onPress }: { label: string; onPress?: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.roundButton, pressed && styles.pressed]}>
-      <Text selectable style={styles.roundText}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.panel}>
-      <Text selectable style={styles.sectionTitle}>
-        {title}
-      </Text>
-      {children}
     </View>
   );
 }
