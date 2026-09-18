@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import * as Location from 'expo-location';
+import * as Crypto from 'expo-crypto';
 import { Recording } from '../lib/recording';
+import { saveRecordedRoute } from '../lib/recorded-routes';
+import { getSupabase } from '../lib/supabase';
 
 export type RecordedPlace = {
   id: string;
@@ -11,6 +14,7 @@ export type RecordedPlace = {
   description: string;
   latitude: number;
   longitude: number;
+  services: string[];
 };
 
 async function initialPosition() {
@@ -30,6 +34,8 @@ export function useRecording() {
   const watcher = useRef<Location.LocationSubscription | null>(null);
   const generation = useRef(0);
   const busyRef = useRef(false);
+  const routeIdRef = useRef<string | null>(null);
+  const finishedAtRef = useRef<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [places, setPlaces] = useState<RecordedPlace[]>([]);
@@ -73,6 +79,8 @@ export function useRecording() {
       if (engine.current.status === 'paused') engine.current.resume(Date.now());
       else {
         engine.current = new Recording();
+        routeIdRef.current = Crypto.randomUUID();
+        finishedAtRef.current = null;
         setPlaces([]);
         engine.current.start(Date.now());
       }
@@ -117,13 +125,14 @@ export function useRecording() {
       engine.current.finish(stoppedAt);
       setError('La ruta terminó, pero no se pudo obtener una última posición GPS.');
     } finally {
+      finishedAtRef.current = stoppedAt;
       busyRef.current = false;
       setBusy(false);
       update(stoppedAt);
     }
     return true;
   };
-  const addPlace = (place: Omit<RecordedPlace, 'id' | 'latitude' | 'longitude'>) => {
+  const addPlace = (place: Omit<RecordedPlace, 'id' | 'latitude' | 'longitude' | 'services'> & { services?: string[] }) => {
     const position = engine.current.points.at(-1);
     if (!position) {
       setError('Espera una ubicación GPS válida antes de guardar un punto.');
@@ -131,11 +140,35 @@ export function useRecording() {
     }
     setPlaces(current => [...current, {
       ...place,
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      id: Crypto.randomUUID(),
+      services: place.services ?? [],
       latitude: position.latitude,
       longitude: position.longitude,
     }]);
     return true;
   };
-  return { track: snapshot.track, places, busy, error, begin, pause, finish, addPlace, elapsed: snapshot.elapsed };
+  const save = async (details: { name: string; description: string; difficulty: string; visibility: 'public' | 'private'; equipment: string[] }) => {
+    const { data, error: userError } = await getSupabase().auth.getUser();
+    if (userError) throw userError;
+    if (!data.user) throw new Error('Inicia sesión para guardar tu ruta.');
+    if (!routeIdRef.current || !engine.current.startedAt || !finishedAtRef.current) {
+      throw new Error('Finaliza una grabación válida antes de guardar la ruta.');
+    }
+    return saveRecordedRoute({
+      id: routeIdRef.current,
+      ownerId: data.user.id,
+      status: 'finished',
+      ...details,
+      started: engine.current.startedAt,
+      ended: finishedAtRef.current,
+      distance: engine.current.distance,
+      elapsed: engine.current.elapsed(finishedAtRef.current),
+      pauseCount: engine.current.pauseCount,
+      updatedAt: Date.now(),
+      points: engine.current.points,
+      places,
+      equipment: details.equipment,
+    });
+  };
+  return { track: snapshot.track, places, busy, error, begin, pause, finish, addPlace, save, routeId: routeIdRef.current, elapsed: snapshot.elapsed };
 }

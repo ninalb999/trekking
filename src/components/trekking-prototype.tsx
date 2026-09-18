@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useRecording } from '../hooks/use-recording';
 import { formatElapsed } from '../lib/recording';
-import { pickRouteImage, type RouteImageSelection } from '../lib/route-images';
+import { pickRouteImage, type RouteImageSelection, uploadRouteMainImage } from '../lib/route-images';
 import { RouteDetailMap } from './route-detail-map';
 import RouteMap from './route-map';
 
@@ -105,7 +105,7 @@ export function TrekkingPrototype() {
         {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} sessionFeedback={sessionFeedback} onOpenRoute={route => { setSelectedPublicRoute(route); setScreen('detail'); }} />}
         {screen === 'login' && <LoginScreen navigate={setScreen} />}
         {screen === 'register' && <RegisterScreen navigate={setScreen} />}
-        {screen === 'routes' && <MyRoutesScreen key={authenticated ? 'authenticated' : 'guest'} navigate={setScreen} authenticated={authenticated} />}
+        {screen === 'routes' && <MyRoutesScreen key={authenticated ? 'authenticated' : 'guest'} navigate={setScreen} authenticated={authenticated} onOpenRoute={route => { setSelectedPublicRoute(route); setScreen('detail'); }} />}
         {screen === 'record' && <RecordingScreen navigate={setScreen} recording={recording} />}
         {screen === 'point' && <PointScreen navigate={setScreen} recording={recording} />}
         {screen === 'finish' && <FinishScreen navigate={setScreen} recording={recording} />}
@@ -395,7 +395,7 @@ function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
   );
 }
 
-function MyRoutesScreen({ navigate, authenticated }: { navigate: (screen: ScreenId) => void; authenticated: boolean }) {
+function MyRoutesScreen({ navigate, authenticated, onOpenRoute }: { navigate: (screen: ScreenId) => void; authenticated: boolean; onOpenRoute: (route: UserRoute) => void }) {
   const [routes, setRoutes] = useState<UserRoute[]>([]);
   const [filter, setFilter] = useState<'all' | 'public' | 'private'>('all');
   const [loading, setLoading] = useState(authenticated);
@@ -434,7 +434,7 @@ function MyRoutesScreen({ navigate, authenticated }: { navigate: (screen: Screen
           <Text style={styles.formCopy}>No tienes rutas {filter === 'all' ? 'guardadas' : filter === 'public' ? 'públicas' : 'privadas'} todavía.</Text>
         )}
         {visibleRoutes.map((route, index) => (
-          <UserRouteCard key={route.id} route={route} index={index} onPress={() => navigate('detail')} />
+          <UserRouteCard key={route.id} route={route} index={index} onPress={() => onOpenRoute(route)} />
         ))}
         <PrimaryButton label="Nueva ruta" icon="+" onPress={() => navigate('record')} />
       </View>
@@ -609,6 +609,14 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
   const [routeImage, setRouteImage] = useState<RouteImageSelection | null>(null);
   const [imageFeedback, setImageFeedback] = useState('');
   const [pickingImage, setPickingImage] = useState(false);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [difficulty, setDifficulty] = useState('Novato');
+  const [visibility, setVisibility] = useState<'public' | 'private'>('private');
+  const [equipment, setEquipment] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState('');
 
   const chooseImage = async () => {
     if (pickingImage) return;
@@ -625,6 +633,38 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
     } finally {
       setPickingImage(false);
     }
+  };
+
+  const saveRoute = async () => {
+    if (saving || saved) return;
+    if (!name.trim()) {
+      setSaveFeedback('Escribe un nombre para guardar la ruta.');
+      return;
+    }
+    setSaving(true);
+    setSaveFeedback('');
+    try {
+      const routeId = await recording.save({
+        name: name.trim(),
+        description: description.trim(),
+        difficulty,
+        visibility,
+        equipment,
+      });
+      if (routeImage) {
+        await uploadRouteMainImage(routeId, routeImage);
+      }
+      setSaved(true);
+      setSaveFeedback('Ruta guardada correctamente. Ya puedes verla en Mis rutas.');
+    } catch (error) {
+      setSaveFeedback(error instanceof Error ? error.message : 'No se pudo guardar la ruta.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleEquipment = (item: string) => {
+    setEquipment(current => current.includes(item) ? current.filter(value => value !== item) : [...current, item]);
   };
 
   return (
@@ -676,34 +716,40 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
         <Text selectable style={styles.sectionTitle}>
           Nombre de la ruta
         </Text>
-        <Field text="Ej. Laguna Escondida" />
-        <Text selectable style={styles.sectionTitle}>
-          Descripcion
-        </Text>
-        <TextArea text="Cuentanos sobre tu ruta, los paisajes, recomendaciones..." count="0/500" />
-        <Text selectable style={styles.sectionTitle}>
-          Dificultad
-        </Text>
-        <View style={styles.pillGrid}>
-          <Pill label="Novato" tone="green" />
-          <Pill label="Intermedio" tone="sand" />
-          <Pill label="Experto" tone="red" />
+          <Field text="Ej. Laguna Escondida" value={name} onChangeText={setName} autoCapitalize="sentences" />
+          <Text selectable style={styles.sectionTitle}>
+            Descripcion
+          </Text>
+          <TextArea text="Cuentanos sobre tu ruta, los paisajes, recomendaciones..." value={description} onChangeText={setDescription} count={`${description.length}/500`} />
+          <Text selectable style={styles.sectionTitle}>
+            Dificultad
+          </Text>
+          <View style={styles.pillGrid}>
+            {['Novato', 'Intermedio', 'Experto'].map(value => (
+              <FilterPill key={value} label={value} selected={difficulty === value} onPress={() => setDifficulty(value)} />
+            ))}
+          </View>
+          <Text selectable style={styles.sectionTitle}>
+            Equipo indispensable
+          </Text>
+          <View style={styles.chipCloud}>
+            {['Agua', 'Botas', 'Mochila', 'Ropa termica', 'Bastones', 'Proteccion solar', 'Mapa/GPS'].map(item => (
+              <SelectableChip key={item} label={item} selected={equipment.includes(item)} onPress={() => toggleEquipment(item)} />
+            ))}
+          </View>
+          <Text selectable style={styles.sectionTitle}>
+            Visibilidad de la ruta
+          </Text>
+          <View style={styles.visibility}>
+            <Visibility title="Publica" active={visibility === 'public'} onPress={() => setVisibility('public')} />
+            <Visibility title="Privada" active={visibility === 'private'} onPress={() => setVisibility('private')} />
+          </View>
+          {!!saveFeedback && <Text selectable accessibilityRole={saved ? undefined : 'alert'} accessibilityLiveRegion="polite" style={saved ? styles.formCopy : styles.formFeedback}>{saveFeedback}</Text>}
+          <PrimaryButton label={saved ? 'Ruta guardada' : saving ? 'Guardando...' : 'Guardar ruta'} icon={saved ? '✓' : '↑'} onPress={saveRoute} />
+          <SecondaryButton label="Consultar puntos guardados" onPress={() => navigate('detail')} />
+          <SecondaryButton label="Volver a Mis rutas" onPress={() => navigate('routes')} />
         </View>
-        <Text selectable style={styles.sectionTitle}>
-          Equipo indispensable
-        </Text>
-        <ChipCloud items={['Agua', 'Botas', 'Mochila', 'Ropa termica', 'Bastones', 'Proteccion solar', 'Mapa/GPS']} />
-        <Text selectable style={styles.sectionTitle}>
-          Visibilidad de la ruta
-        </Text>
-        <View style={styles.visibility}>
-          <Visibility title="Publica" active />
-          <Visibility title="Privada" />
-        </View>
-        <SecondaryButton label="Consultar puntos guardados" onPress={() => navigate('detail')} />
-        <SecondaryButton label="Volver a Mis rutas" onPress={() => navigate('routes')} />
-      </View>
-    </>
+      </>
   );
 }
 
@@ -909,12 +955,21 @@ function Field({ icon, text, trail, value, onChangeText, keyboardType, autoCapit
   );
 }
 
-function TextArea({ text, count }: { text: string; count: string }) {
+function TextArea({ text, value, onChangeText, count }: { text: string; value?: string; onChangeText?: (value: string) => void; count: string }) {
   return (
     <View style={styles.textArea}>
-      <Text selectable style={styles.fieldText}>
-        {text}
-      </Text>
+      {onChangeText ? (
+        <TextInput
+          accessibilityLabel={text}
+          maxLength={500}
+          multiline
+          onChangeText={onChangeText}
+          placeholder={text}
+          placeholderTextColor="#9299a2"
+          style={styles.textAreaInput}
+          value={value ?? ''}
+        />
+      ) : <Text selectable style={styles.fieldText}>{text}</Text>}
       <Text selectable style={styles.counter}>
         {count}
       </Text>
@@ -1148,9 +1203,17 @@ function ChipCloud({ items }: { items: string[] }) {
   );
 }
 
-function Visibility({ title, active }: { title: string; active?: boolean }) {
+function SelectableChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
-    <View style={[styles.visibilityOption, active && styles.visibilityActive]}>
+    <Pressable accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} style={[styles.smallChip, selected && styles.smallChipActive]}>
+      <Text selectable style={styles.smallChipText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function Visibility({ title, active, onPress }: { title: string; active?: boolean; onPress?: () => void }) {
+  return (
+    <Pressable accessibilityRole="radio" accessibilityState={{ checked: active }} disabled={!onPress} onPress={onPress} style={[styles.visibilityOption, active && styles.visibilityActive]}>
       <Icon label={title[0]} />
       <View style={styles.flex}>
         <Text selectable style={styles.visibilityTitle}>
@@ -1161,7 +1224,7 @@ function Visibility({ title, active }: { title: string; active?: boolean }) {
         </Text>
       </View>
       <View style={[styles.radio, active && styles.radioActive]} />
-    </View>
+    </Pressable>
   );
 }
 
@@ -1440,6 +1503,7 @@ const styles = StyleSheet.create({
   pointLetter: { color: '#48504e', fontSize: 20, fontWeight: '900' },
   pointText: { color: '#222c28', fontSize: 11, fontWeight: '800', textAlign: 'center' },
   textArea: { minHeight: 92, borderRadius: 14, borderWidth: 1, borderColor: '#d1d8d6', padding: 14, backgroundColor: '#fff' },
+  textAreaInput: { minHeight: 60, color: '#17221d', fontSize: 16, lineHeight: 22, padding: 0, outlineColor: 'transparent', outlineStyle: 'solid', outlineWidth: 0 },
   counter: { color: '#7d858c', fontSize: 13, fontWeight: '700', alignSelf: 'flex-end', marginTop: 18 },
   services: { padding: 12, borderRadius: 18, backgroundColor: '#fff', gap: 8 },
   serviceGrid: { flexDirection: 'row', gap: 8 },
@@ -1461,6 +1525,7 @@ const styles = StyleSheet.create({
   uploadPlus: { color: '#7d8a86', fontSize: 26, fontWeight: '900' },
   chipCloud: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   smallChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: '#e8f1eb' },
+  smallChipActive: { backgroundColor: '#bfe2ca', borderWidth: 1, borderColor: '#2f6d49' },
   smallChipText: { color: '#163d2d', fontSize: 12, fontWeight: '700' },
   visibility: { flexDirection: 'row', gap: 10 },
   visibilityOption: { flex: 1, minHeight: 76, padding: 10, borderRadius: 14, borderWidth: 1, borderColor: '#d6dfdb', backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', gap: 8 },

@@ -5,15 +5,22 @@ export class Recording {
   points: TrackPoint[] = [];
   distance = 0;
   status: 'idle' | 'recording' | 'paused' | 'finished' = 'idle';
+  startedAt = 0;
+  pauseCount = 0;
   private accumulated = 0;
-  private startedAt = 0;
+  private activeStartedAt = 0;
   private segment = 0;
-  start(now: number) { this.status = 'recording'; this.startedAt = now; }
-  elapsed(now: number) { return this.accumulated + (this.status === 'recording' ? Math.max(0, now - this.startedAt) : 0); }
-  pause(now: number) {
+  start(now: number) {
+    if (this.status === 'idle') this.startedAt = now;
+    this.status = 'recording';
+    this.activeStartedAt = now;
+  }
+  elapsed(now: number) { return this.accumulated + (this.status === 'recording' ? Math.max(0, now - this.activeStartedAt) : 0); }
+  pause(now: number, count = true) {
     if (this.status !== 'recording') return;
     this.accumulated = this.elapsed(now);
     this.status = 'paused';
+    if (count) this.pauseCount += 1;
   }
   resume(now: number) {
     if (this.status !== 'paused') return;
@@ -26,7 +33,7 @@ export class Recording {
     finalPointStartsNewSegment = this.status === 'paused',
   ) {
     if (this.status === 'finished') return false;
-    if (this.status === 'recording') this.pause(now);
+    if (this.status === 'recording') this.pause(now, false);
     let finalPointAccepted = false;
     if (finalPoint) {
       if (finalPointStartsNewSegment) this.segment += 1;
