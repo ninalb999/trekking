@@ -29,7 +29,13 @@ export function RouteDetailMap({ routeId }: { routeId: string }) {
   return (
     <RouteMap
       points={mapData.trackPoints.map(point => ({ latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy_m, timestamp: Date.parse(point.recorded_at), segment: point.segment_no }))}
-      places={mapData.routePoints.map(point => ({ ...point, name: point.name ?? point.point_type }))}
+      places={mapData.routePoints.map(point => ({
+        latitude: point.latitude,
+        longitude: point.longitude,
+        name: point.name ?? point.point_type,
+        description: point.description ?? undefined,
+        type: point.point_type,
+      }))}
       overview
     />
   );

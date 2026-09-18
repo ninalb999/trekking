@@ -149,7 +149,7 @@ export function TrekkingPrototype() {
           contentContainerStyle={{ paddingBottom: isAuth ? insets.bottom + 16 : 16 }}
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="never">
-        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} sessionFeedback={sessionFeedback} />}
+        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} sessionFeedback={sessionFeedback} onNotice={showNotice} />}
         {screen === 'login' && <LoginScreen navigate={setScreen} onNotice={showNotice} />}
         {screen === 'register' && <RegisterScreen navigate={setScreen} onNotice={showNotice} />}
         {screen === 'routes' && <SavedRoutes ownerId={ownerId} message={recording.saveStatus} create={() => setScreen('record')} open={route => {
@@ -164,7 +164,7 @@ export function TrekkingPrototype() {
         {!!notice && <NoticeBanner message={notice} />}
         {!isAuth && (
           <View style={{ paddingBottom: insets.bottom, backgroundColor: '#fff', flexShrink: 0 }}>
-            <BottomTabs active={activeTab} navigate={setScreen} />
+            <BottomTabs active={activeTab} authenticated={authenticated} navigate={setScreen} onNotice={showNotice} />
           </View>
         )}
       </View>
@@ -217,11 +217,12 @@ function Hero({ title, subtitle, center }: { title: string; subtitle: string; ce
   );
 }
 
-function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback }: {
+function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback, onNotice }: {
   navigate: (screen: ScreenId) => void;
   authenticated: boolean;
   onSignOut: () => void;
   sessionFeedback: string;
+  onNotice: (message: string) => void;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState('');
@@ -239,7 +240,22 @@ function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback }: {
     return () => { active = false; };
   }, [search, difficulty]);
 
-  const open = (route: PublicRouteSummary) => router.push(`/rutas/${route.id}` as never);
+  const open = (route: PublicRouteSummary) => {
+    if (!authenticated) {
+      onNotice('Inicia sesión para ver el detalle de la ruta.');
+      navigate('login');
+      return;
+    }
+    router.push(`/rutas/${route.id}` as never);
+  };
+  const goRecord = () => {
+    if (!authenticated) {
+      onNotice('Inicia sesión para grabar una ruta.');
+      navigate('login');
+      return;
+    }
+    navigate('record');
+  };
 
   return (
     <>
@@ -270,7 +286,7 @@ function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback }: {
           <RouteCard key={route.id} route={route} index={index} onPress={() => open(route)} />
         ))}
         {!loading && !routes.length && <Text selectable style={styles.formCopy}>No hay rutas publicas con esos filtros.</Text>}
-        <PrimaryButton label="Grabar ruta" icon="+" onPress={() => navigate('record')} />
+        <PrimaryButton label="Grabar ruta" icon="+" onPress={goRecord} />
       </View>
     </>
   );
@@ -976,7 +992,7 @@ function DangerButton({ label, onPress, disabled }: { label: string; onPress?: (
   );
 }
 
-function BottomTabs({ active, navigate }: { active: string; navigate: (screen: ScreenId) => void }) {
+function BottomTabs({ active, authenticated, navigate, onNotice }: { active: string; authenticated: boolean; navigate: (screen: ScreenId) => void; onNotice: (message: string) => void }) {
   const tabTargets: Record<string, ScreenId> = {
     Inicio: 'home',
     Grabar: 'record',
@@ -991,7 +1007,14 @@ function BottomTabs({ active, navigate }: { active: string; navigate: (screen: S
           accessibilityRole="tab"
           accessibilityLabel={item}
           accessibilityState={{ selected: active === item }}
-          onPress={() => navigate(tabTargets[item])}
+          onPress={() => {
+            if (item === 'Grabar' && !authenticated) {
+              onNotice('Inicia sesión para grabar una ruta.');
+              navigate('login');
+              return;
+            }
+            navigate(tabTargets[item]);
+          }}
           style={({ pressed }) => [styles.tab, pressed && styles.pressed]}>
           <Text selectable style={[styles.tabIcon, active === item && styles.tabActive]}>
             {item === 'Inicio' ? '⌂' : item === 'Grabar' ? '●' : '▱'}

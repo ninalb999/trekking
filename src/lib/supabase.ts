@@ -1,7 +1,7 @@
 import 'react-native-url-polyfill/auto';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createClient, processLock, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
 import type { Database } from '@/types/database';
@@ -28,7 +28,6 @@ export function getSupabase(): SupabaseClient<Database> {
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
-      lock: processLock,
     },
     global: { fetch: async (input, init) => {
       const controller = new AbortController();

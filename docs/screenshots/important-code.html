@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8"><title>use-recording.ts</title><style>
+body{margin:0;background:#0f172a;color:#e5e7eb;font-family:Inter,Segoe UI,Arial,sans-serif;padding:32px;}
+.card{background:#111827;border:1px solid #334155;border-radius:14px;box-shadow:0 24px 80px rgba(0,0,0,.35);overflow:hidden;}
+.header{padding:18px 24px;background:#0b1220;border-bottom:1px solid #334155;display:flex;justify-content:space-between;align-items:center;}
+.title{font-weight:800;font-size:22px;color:#f8fafc}.path{color:#93c5fd;font-size:14px}.badge{background:#064e3b;color:#bbf7d0;border:1px solid #15803d;border-radius:999px;padding:6px 12px;font-weight:700;font-size:13px}
+.code{padding:18px 0;font-family:Cascadia Code,Consolas,monospace;font-size:15px;line-height:1.55;}
+.row{display:grid;grid-template-columns:58px 1fr;padding:0 24px;white-space:pre;}.row:nth-child(odd){background:rgba(255,255,255,.018)}
+.ln{color:#64748b;text-align:right;padding-right:18px;user-select:none} code{color:#e2e8f0}.why{padding:18px 24px;border-top:1px solid #334155;background:#0b1220;color:#cbd5e1;font-size:16px;line-height:1.45}.why strong{color:#f8fafc}
+</style></head><body><div class="card"><div class="header"><div><div class="title">Codigo critico: grabacion GPS</div><div class="path">src/hooks/use-recording.ts:84-124</div></div><div class="badge">Core del MVP</div></div><div class="code"><div class="row"><span class="ln">84</span><code>  const begin = async () =&gt; {</code></div>
+<div class="row"><span class="ln">85</span><code>    if (busyRef.current || engine.current.status === 'recording') return;</code></div>
+<div class="row"><span class="ln">86</span><code>    busyRef.current = true; setBusy(true); setError(''); stop();</code></div>
+<div class="row"><span class="ln">87</span><code>    const token = generation.current;</code></div>
+<div class="row"><span class="ln">88</span><code>    try {</code></div>
+<div class="row"><span class="ln">89</span><code>      if (process.env.EXPO_OS !== 'web') {</code></div>
+<div class="row"><span class="ln">90</span><code>        const permission = await Location.requestForegroundPermissionsAsync();</code></div>
+<div class="row"><span class="ln">91</span><code>        if (!permission.granted) throw new Error('Permite la ubicacion precisa en Ajustes para grabar.');</code></div>
+<div class="row"><span class="ln">92</span><code>        if (!await Location.hasServicesEnabledAsync()) throw new Error('Activa la ubicacion GPS del celular.');</code></div>
+<div class="row"><span class="ln">93</span><code>      } else if (!globalThis.isSecureContext || !navigator.geolocation) {</code></div>
+<div class="row"><span class="ln">94</span><code>        throw new Error('La ubicacion necesita localhost o una conexion HTTPS.');</code></div>
+<div class="row"><span class="ln">95</span><code>      }</code></div>
+<div class="row"><span class="ln">96</span><code>      if (token !== generation.current) return;</code></div>
+<div class="row"><span class="ln">97</span><code>      if (engine.current.status === 'paused') engine.current.resume(Date.now());</code></div>
+<div class="row"><span class="ln">98</span><code>      else {</code></div>
+<div class="row"><span class="ln">99</span><code>        engine.current = new Recording(); engine.current.id = randomUUID();</code></div>
+<div class="row"><span class="ln">100</span><code>        engine.current.start(Date.now()); meta.current = { ownerId, places: [] }; setLocation(null);</code></div>
+<div class="row"><span class="ln">101</span><code>      }</code></div>
+<div class="row"><span class="ln">102</span><code>      const add = (position: { coords: { latitude: number; longitude: number; accuracy: number | null }; timestamp: number }) =&gt; {</code></div>
+<div class="row"><span class="ln">103</span><code>        if (token !== generation.current || !Number.isFinite(position.timestamp) || Date.now() - position.timestamp &gt; 30000 || position.timestamp &gt; Date.now() + 5000 ||</code></div>
+<div class="row"><span class="ln">104</span><code>          !Number.isFinite(position.coords.latitude) || Math.abs(position.coords.latitude) &gt; 90 || !Number.isFinite(position.coords.longitude) || Math.abs(position.coords.longitude) &gt; 180) return;</code></div>
+<div class="row"><span class="ln">105</span><code>        const next = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp };</code></div>
+<div class="row"><span class="ln">106</span><code>        setLocation(next); engine.current.add(next); setError(''); update();</code></div>
+<div class="row"><span class="ln">107</span><code>      };</code></div>
+<div class="row"><span class="ln">108</span><code>      const failed = (message: string) =&gt; { if (token === generation.current) { pause(); setError(message); } };</code></div>
+<div class="row"><span class="ln">109</span><code>      if (process.env.EXPO_OS === 'web') {</code></div>
+<div class="row"><span class="ln">110</span><code>        const id = navigator.geolocation.watchPosition(add, err =&gt; {</code></div>
+<div class="row"><span class="ln">111</span><code>          if (err.code === 1) failed('Acceso bloqueado. Permite Ubicacion en los ajustes del sitio.');</code></div>
+<div class="row"><span class="ln">112</span><code>          else if (token === generation.current) setError('Buscando senal GPS. Se conserva el recorrido.');</code></div>
+<div class="row"><span class="ln">113</span><code>        }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });</code></div>
+<div class="row"><span class="ln">114</span><code>        watcher.current = () =&gt; navigator.geolocation.clearWatch(id);</code></div>
+<div class="row"><span class="ln">115</span><code>      } else {</code></div>
+<div class="row"><span class="ln">116</span><code>        const subscription = await Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 0, timeInterval: 1000, mayShowUserSettingsDialog: true }, add, failed);</code></div>
+<div class="row"><span class="ln">117</span><code>        if (token !== generation.current) subscription.remove(); else watcher.current = () =&gt; subscription.remove();</code></div>
+<div class="row"><span class="ln">118</span><code>      }</code></div>
+<div class="row"><span class="ln">119</span><code>      autosave(true);</code></div>
+<div class="row"><span class="ln">120</span><code>    } catch (cause) {</code></div>
+<div class="row"><span class="ln">121</span><code>      if (token === generation.current) { stop(); engine.current.pause(Date.now()); setError(cause instanceof Error ? cause.message : 'No se pudo iniciar el GPS.'); }</code></div>
+<div class="row"><span class="ln">122</span><code>    } finally { busyRef.current = false; setBusy(false); update(); }</code></div>
+<div class="row"><span class="ln">123</span><code>  };</code></div>
+<div class="row"><span class="ln">124</span><code>  const finish = async () =&gt; {</code></div></div><div class="why"><strong>Por que importa:</strong> este bloque pide permisos/servicios GPS, captura posiciones en tiempo real, alimenta el motor que calcula distancia y tiempo activo, mantiene el mapa actualizado y deja la ruta lista para guardarse localmente y sincronizarse con Supabase.</div></div></body></html>
