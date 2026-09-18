@@ -1,63 +1,121 @@
-# Welcome to your Expo app 👋
+# Trekking Bolivia
 
-## Trekking Bolivia — Supabase V1
+App Expo/React Native para registrar rutas de trekking con GPS, guardar copia local y sincronizar con Supabase.
 
-El esquema, RLS, Storage y la integración mínima están documentados en
-[docs/supabase_database.md](docs/supabase_database.md).
-Consulta los resultados y pendientes de despliegue en
-[docs/supabase_validation.md](docs/supabase_validation.md).
+## Requisitos
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+- Node.js instalado.
+- Expo Go instalado en el celular Android.
+- Archivo `.env.local` en la raiz del proyecto con las variables de Supabase.
 
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Ejemplo:
 
 ```bash
-npm run reset-project
+EXPO_PUBLIC_SUPABASE_URL=https://khhnfbwzxklzkegwfapd.supabase.co
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=tu_publishable_key
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+El archivo `.env.local` no se sube a GitHub.
 
-### Other setup steps
+## Instalar Dependencias
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+```bash
+cd "C:\Users\PC\Documents\ChatGPT\New project\trekking-app"
+npm install
+```
 
-## Learn more
+`@expo/ngrok` ya esta como dependencia del proyecto para que `--tunnel` no pida instalacion global.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Correr Localmente En Navegador
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+npx expo start --web
+```
 
-## Join the community
+Abre:
 
-Join our community of developers creating universal apps.
+```text
+http://localhost:8081
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Esta opcion sirve para revisar pantallas y formularios. Para GPS real conviene probar desde celular.
+
+## Correr En Celular Con Expo Go
+
+Usa tunel cuando la PC y el celular no estan en la misma red Wi-Fi.
+
+```bash
+npx expo start --tunnel --clear
+```
+
+Luego:
+
+1. Abre Expo Go en el celular.
+2. Escanea el QR que aparece en la terminal.
+3. Acepta permisos de ubicacion precisa cuando la app los pida.
+4. Manten la app abierta mientras grabas una ruta.
+
+Si Expo vuelve a pedir instalar `@expo/ngrok`, deten el proceso con `Ctrl + C`, ejecuta `npm install` y vuelve a correr:
+
+```bash
+npx expo start --tunnel --clear
+```
+
+Si el QR no aparece pero Metro queda activo, revisa que diga:
+
+```text
+Tunnel connected.
+Tunnel ready.
+Waiting on http://localhost:8081
+```
+
+En ese caso deten con `Ctrl + C` y vuelve a ejecutar el mismo comando en una terminal normal del proyecto.
+
+## Probar Grabacion GPS
+
+Flujo esperado:
+
+1. Entra a la app desde Expo Go.
+2. Pulsa `Continuar sin cuenta` o inicia sesion.
+3. Ve a `Grabar`.
+4. Pulsa `Iniciar grabacion`.
+5. Espera una precision GPS razonable.
+6. Camina unos metros.
+7. Verifica que distancia y tiempo activo aumenten.
+8. Agrega un punto si necesitas marcar campamento, agua, descanso, tienda u otro.
+9. Finaliza la ruta.
+10. Completa nombre, descripcion, dificultad, equipo y visibilidad.
+11. Guarda la ruta.
+
+Sin sesion, la ruta queda como copia local. Con sesion, se guarda localmente y se intenta sincronizar con Supabase.
+
+## Comandos Utiles
+
+```bash
+npm run typecheck
+npm test
+npm run lint
+```
+
+Para validar que el bundle Android compila sin crear APK:
+
+```bash
+npx expo export --platform android
+```
+
+## Base De Datos
+
+El esquema, RLS, Storage y funciones de sincronizacion estan documentados en:
+
+- `docs/supabase_database.md`
+- `docs/supabase_validation.md`
+
+Las migraciones estan en:
+
+```text
+supabase/migrations
+```
+
+## APK
+
+Todavia no se debe crear APK para esta etapa. Primero se hacen pruebas locales con Expo Go y, cuando se cierren observaciones, se genera una build APK de prueba.

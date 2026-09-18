@@ -7,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
   public: {
     Tables: {
       profiles: {
@@ -192,6 +197,7 @@ export type Database = {
           longitude: number
           recorded_at: string
           route_id: string
+          segment_no: number
           sequence_no: number
         }
         Insert: {
@@ -203,6 +209,7 @@ export type Database = {
           longitude: number
           recorded_at: string
           route_id: string
+          segment_no?: number
           sequence_no: number
         }
         Update: {
@@ -214,6 +221,7 @@ export type Database = {
           longitude?: number
           recorded_at?: string
           route_id?: string
+          segment_no?: number
           sequence_no?: number
         }
         Relationships: [
@@ -229,6 +237,8 @@ export type Database = {
       routes: {
         Row: {
           active_duration_seconds: number
+          client_snapshot: Json | null
+          client_updated_at: number
           created_at: string
           description: string | null
           difficulty: string | null
@@ -252,6 +262,8 @@ export type Database = {
         }
         Insert: {
           active_duration_seconds?: number
+          client_snapshot?: Json | null
+          client_updated_at?: number
           created_at?: string
           description?: string | null
           difficulty?: string | null
@@ -275,6 +287,8 @@ export type Database = {
         }
         Update: {
           active_duration_seconds?: number
+          client_snapshot?: Json | null
+          client_updated_at?: number
           created_at?: string
           description?: string | null
           difficulty?: string | null
@@ -311,7 +325,29 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      public_route_catalog: {
+        Args: {
+          search_text?: string
+          difficulty_filter?: string | null
+          limit_count?: number
+        }
+        Returns: {
+          id: string
+          name: string
+          description: string | null
+          difficulty: string | null
+          owner_name: string
+          total_distance_m: number
+          active_duration_seconds: number
+          pause_count: number
+          published_at: string | null
+          main_image_path: string | null
+          equipment: string[]
+          point_count: number
+        }[]
+      }
+      public_route_detail: { Args: { route_id: string }; Returns: Json }
+      save_recorded_route_v1: { Args: { payload: Json }; Returns: string }
     }
     Enums: {
       [_ in never]: never

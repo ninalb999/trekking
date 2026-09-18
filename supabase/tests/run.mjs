@@ -121,7 +121,11 @@ try {
     },
   };
   const metadata = sortGeneratorMetadata(await introspect(introspectionClient, { includedSchemas: ['public'] }));
-  const generated = await generateTypescript(metadata, { detectOneToOneRelationships: true });
+  const generated = await generateTypescript(metadata, {
+    detectOneToOneRelationships: true,
+    // Keep offline-generated types byte-compatible with the linked project.
+    postgrestVersion: '14.5',
+  });
   const typePath = join(root, 'src/types/database.ts');
   if (process.argv.includes('--generate-types')) {
     await mkdir(dirname(typePath), { recursive: true });
@@ -254,7 +258,14 @@ try {
       await as(role, uid, async () => assert.equal(await count('storage.objects', 'name=$1', [privateImage]), 0));
     }
     await as('authenticated', a, async () => assert.equal(await count('storage.objects', 'name=$1', [privateImage]), 1));
-    assert.equal((await rows("select public from storage.buckets where id='route-images'"))[0].public, false);
+    assert.deepEqual(
+      (await rows("select public,file_size_limit,allowed_mime_types from storage.buckets where id='route-images'"))[0],
+      {
+        public: false,
+        file_size_limit: '5242880',
+        allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp'],
+      },
+    );
   });
   await test('12 Public photo metadata readable; privatizing route immediately revokes SQL access', async () => {
     await as('anon', null, async () => assert.equal(await count('storage.objects', 'name=$1', [publicImage]), 1));
@@ -397,6 +408,49 @@ try {
     for (const [role, uid] of [['anon', null], ['authenticated', a]]) {
       await as(role, uid, async () => assert.equal(await count('storage.objects', 'name=$1', [publicImage]), 0));
     }
+  });
+  await test('21 Recorded-route RPC is owner-only and preserves GPS segments', async () => {
+    const routeId = randomUUID();
+    const payload = {
+      id: routeId,
+      ownerId: a,
+      status: 'finished',
+      name: 'Ruta sincronizada',
+      description: 'Prueba local del contrato remoto',
+      difficulty: 'Novato',
+      visibility: 'private',
+      started: 1_000,
+      ended: 21_000,
+      distance: 111,
+      elapsed: 20_000,
+      pauseCount: 1,
+      updatedAt: 21_000,
+      imagePath: '',
+      points: [
+        { latitude: 0, longitude: 0, accuracy: 5, timestamp: 1_000, segment: 0 },
+        { latitude: 0, longitude: 0.001, accuracy: 5, timestamp: 21_000, segment: 1 },
+      ],
+      places: [],
+      equipment: [],
+    };
+    await as('anon', null, () => rejected(
+      'select public.save_recorded_route_v1($1::jsonb)', [payload], '42501'));
+    await as('authenticated', b, () => rejected(
+      'select public.save_recorded_route_v1($1::jsonb)', [payload], 'P0001'));
+    await as('authenticated', a, async () => {
+      assert.equal((await rows('select public.save_recorded_route_v1($1::jsonb) id', [payload]))[0].id, routeId);
+      assert.deepEqual(
+        await rows('select sequence_no,segment_no from route_track_points where route_id=$1 order by sequence_no', [routeId]),
+        [{ sequence_no: 0, segment_no: 0 }, { sequence_no: 1, segment_no: 1 }],
+      );
+      assert.equal((await rows('select status from routes where id=$1', [routeId]))[0].status, 'draft');
+      assert.equal((await query('delete from routes where id=$1', [routeId])).rowCount, 1);
+    });
+    const privileges = (await rows(`select
+      has_function_privilege('anon','public.save_recorded_route_v1(jsonb)','EXECUTE') anon_execute,
+      has_function_privilege('authenticated','public.save_recorded_route_v1(jsonb)','EXECUTE') authenticated_execute,
+      prosecdef from pg_proc where oid='public.save_recorded_route_v1(jsonb)'::regprocedure`))[0];
+    assert.deepEqual(privileges, { anon_execute: false, authenticated_execute: true, prosecdef: false });
   });
   await query('rollback');
   await writeFile(join(artifacts, 'results.json'), JSON.stringify({

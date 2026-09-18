@@ -28,9 +28,9 @@ export function RouteDetailMap({ routeId }: { routeId: string }) {
 
   return (
     <RouteMap
-      points={mapData.trackPoints}
-      routePoints={mapData.routePoints}
-      dom={{ useExpoDOMWebView: false, style: { height: 260 }, scrollEnabled: false }}
+      points={mapData.trackPoints.map(point => ({ latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy_m, timestamp: Date.parse(point.recorded_at), segment: point.segment_no }))}
+      places={mapData.routePoints.map(point => ({ ...point, name: point.name ?? point.point_type }))}
+      overview
     />
   );
 }
