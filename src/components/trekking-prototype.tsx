@@ -11,11 +11,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
+import { useRouter } from 'expo-router';
 import { useRecording } from '../hooks/use-recording';
 import { formatElapsed } from '../lib/recording';
 import RouteMap from './route-map';
 import { pickRouteImage, type RouteImageSelection } from '../lib/route-images';
-import { RouteDetailMap } from './route-detail-map';
 import { PointForm, FinishForm, SavedRoutes, SavedRouteDetail } from './route-workflow';
 import type { RouteData } from '../lib/route-data';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -26,9 +26,7 @@ import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import {
   formatDistance,
   formatDuration,
-  getPublicRouteDetail,
   listPublicRoutes,
-  type PublicRouteDetail,
   type PublicRouteSummary,
 } from '@/lib/public-routes';
 
@@ -48,7 +46,6 @@ export function TrekkingPrototype() {
   const pauseRecording = useRef(recording.pause);
   useEffect(() => { pauseRecording.current = recording.pause; });
   const [selectedRoute, setSelectedRoute] = useState<RouteData | null>(null);
-  const [selectedPublicRoute, setSelectedPublicRoute] = useState<PublicRouteDetail | null>(null);
   const [screen, setCurrentScreen] = useState<ScreenId>('login');
   const [activeTab, setActiveTab] = useState('Inicio');
   const [authenticated, setAuthenticated] = useState(false);
@@ -122,7 +119,7 @@ export function TrekkingPrototype() {
           contentContainerStyle={{ paddingBottom: isAuth ? insets.bottom + 16 : 16 }}
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="never">
-        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} sessionFeedback={sessionFeedback} openRoute={route => { setSelectedPublicRoute(route); setScreen('detail'); }} />}
+        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} sessionFeedback={sessionFeedback} />}
         {screen === 'login' && <LoginScreen navigate={setScreen} />}
         {screen === 'register' && <RegisterScreen navigate={setScreen} />}
         {screen === 'routes' && <SavedRoutes ownerId={ownerId} message={recording.saveStatus} create={() => setScreen('record')} open={route => {
@@ -132,9 +129,7 @@ export function TrekkingPrototype() {
         {screen === 'record' && <RecordingScreen navigate={setScreen} recording={recording} />}
         {screen === 'point' && <PointForm recording={recording} back={() => setScreen('record')} />}
         {screen === 'finish' && <FinishForm recording={recording} done={() => setScreen('routes')} />}
-        {screen === 'detail' && (selectedRoute
-          ? <SavedRouteDetail route={selectedRoute} back={() => { setSelectedRoute(null); setScreen('routes'); }} />
-          : <DetailScreen navigate={setScreen} route={selectedPublicRoute} />)}
+        {screen === 'detail' && selectedRoute && <SavedRouteDetail route={selectedRoute} back={() => { setSelectedRoute(null); setScreen('routes'); }} />}
         </ScrollView>
         {!isAuth && (
           <View style={{ paddingBottom: insets.bottom, backgroundColor: '#fff', flexShrink: 0 }}>
@@ -183,13 +178,13 @@ function Hero({ title, subtitle, center }: { title: string; subtitle: string; ce
   );
 }
 
-function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback, openRoute }: {
+function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback }: {
   navigate: (screen: ScreenId) => void;
   authenticated: boolean;
   onSignOut: () => void;
   sessionFeedback: string;
-  openRoute: (route: PublicRouteDetail) => void;
 }) {
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [difficulty, setDifficulty] = useState('');
   const [routes, setRoutes] = useState<PublicRouteSummary[]>([]);
@@ -205,16 +200,7 @@ function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback, openR
     return () => { active = false; };
   }, [search, difficulty]);
 
-  const open = async (route: PublicRouteSummary) => {
-    setFeedback('');
-    try {
-      const detail = await getPublicRouteDetail(route.id);
-      if (detail) openRoute(detail);
-      else setFeedback('No se encontro el detalle de esta ruta.');
-    } catch {
-      setFeedback('No se pudo cargar el detalle de la ruta.');
-    }
-  };
+  const open = (route: PublicRouteSummary) => router.push(`/rutas/${route.id}` as never);
 
   return (
     <>
@@ -245,7 +231,7 @@ function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback, openR
         {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
         {loading && <Text selectable style={styles.formCopy}>Cargando rutas publicas...</Text>}
         {!loading && routes.map((route, index) => (
-          <RouteCard key={route.id} route={route} index={index} onPress={() => void open(route)} />
+          <RouteCard key={route.id} route={route} index={index} onPress={() => open(route)} />
         ))}
         {!loading && !routes.length && <Text selectable style={styles.formCopy}>No hay rutas publicas con esos filtros.</Text>}
         <PrimaryButton label="Grabar ruta" icon="+" onPress={() => navigate('record')} />
@@ -658,91 +644,6 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
   );
 }
 
-function DetailScreen({ navigate, route }: { navigate: (screen: ScreenId) => void; route: PublicRouteDetail | null }) {
-  const title = route?.name ?? 'Laguna Escondida';
-  const owner = route?.ownerName ?? 'Andes Explorer';
-  const distance = route ? formatDistance(route.distanceMeters) : '12.4 km';
-  const duration = route ? formatDuration(route.durationSeconds) : '5 h 30 min';
-  const difficulty = route?.difficulty ?? 'Novato';
-  const equipment = route?.equipment.length ? route.equipment : ['Mochila', 'Botas de trekking', 'Agua (2L+)', 'Ropa termica', 'Impermeable', 'Bastones'];
-  const places = route?.places ?? [];
-  return (
-    <View style={styles.detailContent}>
-      <View style={styles.detailBar}>
-        <RoundButton label="<" onPress={() => navigate('home')} />
-        <Text selectable style={styles.detailHeader}>
-          Detalle de ruta
-        </Text>
-        <Text selectable style={styles.kebab}>
-          ⋮
-        </Text>
-      </View>
-      <Photo hero />
-      <View style={styles.rowBetween}>
-        <View style={styles.flex}>
-          <Text selectable style={styles.bigRouteTitle}>
-            {title}
-          </Text>
-          <Text selectable style={styles.owner}>
-            Por {owner}
-          </Text>
-        </View>
-        <Pill label="Publica" tone="green" small />
-      </View>
-      <View style={styles.summary}>
-        <SmallMetric value={distance} label="Distancia" />
-        <SmallMetric value={duration} label="Duracion" />
-        <SmallMetric value={difficulty} label="Dificultad" />
-      </View>
-      <View style={styles.actions}>
-        <PrimaryButton label="Descargar" icon="D" flex />
-        <SecondaryButton label="Guardar" icon="B" flex />
-      </View>
-      <Panel title="Mapa de la ruta">
-        {route?.points.length
-          ? <RouteMap points={route.points} places={route.places} overview />
-          : route?.id && !route.id.startsWith('demo-')
-            ? <RouteDetailMap routeId={route.id} />
-            : <Text selectable style={styles.formCopy}>Selecciona una ruta del catalogo para cargar su recorrido real.</Text>}
-      </Panel>
-      <Panel title="Equipo indispensable">
-        <ChipCloud items={equipment} />
-      </Panel>
-      <Panel title="Puntos de la ruta">
-        {(places.length ? places : [{ id: 'fallback-start', name: 'Inicio', description: 'Punto de partida' }]).map((item, index) => (
-          <View key={item.id} style={styles.pointRow}>
-            <View style={styles.pointDot} />
-            <View style={styles.flex}>
-              <Text selectable style={styles.pointRowTitle}>
-                {item.name}
-              </Text>
-              <Text selectable style={styles.pointRowCopy}>
-                {item.description || `Punto ${index + 1} del recorrido`}
-              </Text>
-            </View>
-            <Text selectable style={styles.pointRowTrail}>
-              {index === 0 ? '0.0 km' : '⌄'}
-            </Text>
-          </View>
-        ))}
-      </Panel>
-      <Panel title="Comentarios">
-        <View style={styles.comment}>
-          <View style={styles.avatar} />
-          <View style={styles.flex}>
-            <Text selectable style={styles.commentName}>
-              Camila R.
-            </Text>
-            <Text selectable style={styles.commentCopy}>
-              Increible ruta. Las vistas de la laguna son espectaculares.
-            </Text>
-          </View>
-        </View>
-      </Panel>
-    </View>
-  );
-}
-
 function SearchBox({ text, value, onChangeText }: { text: string; value: string; onChangeText: (value: string) => void }) {
   return (
     <View style={styles.search}>
@@ -1127,27 +1028,6 @@ function Visibility({ title, active }: { title: string; active?: boolean }) {
         </Text>
       </View>
       <View style={[styles.radio, active && styles.radioActive]} />
-    </View>
-  );
-}
-
-function RoundButton({ label, onPress }: { label: string; onPress?: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.roundButton, pressed && styles.pressed]}>
-      <Text selectable style={styles.roundText}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.panel}>
-      <Text selectable style={styles.sectionTitle}>
-        {title}
-      </Text>
-      {children}
     </View>
   );
 }
