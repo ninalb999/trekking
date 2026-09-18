@@ -66,7 +66,7 @@ export async function listPublicRoutes(search = '', difficulty = ''): Promise<Pu
   try {
     const { data, error } = await getSupabase().rpc('public_route_catalog', {
       search_text: search.trim(),
-      difficulty_filter: difficulty || null,
+      ...(difficulty ? { difficulty_filter: difficulty } : {}),
       limit_count: 30,
     });
     if (error) throw error;

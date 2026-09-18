@@ -327,23 +327,23 @@ export type Database = {
     Functions: {
       public_route_catalog: {
         Args: {
-          search_text?: string
-          difficulty_filter?: string | null
+          difficulty_filter?: string
           limit_count?: number
+          search_text?: string
         }
         Returns: {
-          id: string
-          name: string
-          description: string | null
-          difficulty: string | null
-          owner_name: string
-          total_distance_m: number
           active_duration_seconds: number
-          pause_count: number
-          published_at: string | null
-          main_image_path: string | null
+          description: string
+          difficulty: string
           equipment: string[]
+          id: string
+          main_image_path: string
+          name: string
+          owner_name: string
+          pause_count: number
           point_count: number
+          published_at: string
+          total_distance_m: number
         }[]
       }
       public_route_detail: { Args: { route_id: string }; Returns: Json }
