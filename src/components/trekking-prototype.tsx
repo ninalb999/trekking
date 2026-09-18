@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useRecording } from '../hooks/use-recording';
 import { formatElapsed } from '../lib/recording';
 import RouteMap from './route-map';
@@ -255,26 +256,28 @@ function LoginScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
           </Text>
         </View>
         <Text selectable style={styles.authTitle}>
-          Iniciar sesion
+          Iniciar sesión
         </Text>
         <Text selectable style={styles.authCopy}>
-          Continua tu aventura y descubre nuevas rutas
+          Continúa tu aventura y descubre nuevas rutas
         </Text>
-        <Field icon="M" text="Correo" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
-        <Field icon="L" text="Contraseña" value={password} onChangeText={setPassword} secure />
-        <Text selectable style={styles.forgot}>
-          Olvidaste tu contrasena?
-        </Text>
-        {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
-        <PrimaryButton label={loading ? 'Ingresando...' : 'Ingresar'} suffix="→" onPress={login} disabled={loading} />
-        <Divider />
-        <SecondaryButton label="No tienes cuenta? Registrate" onPress={() => navigate('register')} />
-        <SecondaryButton label="Continuar sin cuenta" onPress={() => navigate('home')} />
+        <View style={styles.authForm}>
+          <Field text="Correo electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+          <Field text="Contraseña" value={password} onChangeText={setPassword} secure />
+          <Text selectable style={styles.forgot}>
+            ¿Olvidaste tu contraseña?
+          </Text>
+          {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
+          <PrimaryButton label={loading ? 'Ingresando...' : 'Ingresar'} suffix="→" onPress={login} disabled={loading} />
+          <Divider />
+          <SecondaryButton label="¿No tienes cuenta? Regístrate" onPress={() => navigate('register')} />
+          <SecondaryButton label="Continuar sin cuenta" onPress={() => navigate('home')} />
+        </View>
       </View>
       <View style={styles.features}>
-        <MiniFeature icon="↟" label="Descubre nuevos lugares" />
-        <MiniFeature icon="◎" label="Comparte tus experiencias" />
-        <MiniFeature icon="▱" label="Vive la naturaleza" />
+        <MiniFeature icon={{ ios: 'map.fill', android: 'route', web: 'route' }} label="Descubre nuevos lugares" />
+        <MiniFeature icon={{ ios: 'bubble.left.and.bubble.right.fill', android: 'forum', web: 'forum' }} label="Comparte tus experiencias" />
+        <MiniFeature icon={{ ios: 'tree.fill', android: 'forest', web: 'forest' }} label="Vive la naturaleza" />
       </View>
     </>
   );
@@ -342,9 +345,7 @@ function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
               C
             </Text>
             <View style={styles.addCircle}>
-              <Text selectable style={styles.addText}>
-                +
-              </Text>
+              <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={20} tintColor="#fff" />
             </View>
           </View>
           <View style={styles.flex}>
@@ -356,14 +357,14 @@ function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
             </Text>
           </View>
         </View>
-        <Field icon="P" text="Nombre completo" value={name} onChangeText={setName} autoCapitalize="words" />
-        <Field icon="T" text="Teléfono (opcional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-        <Field icon="M" text="Correo electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
-        <Field icon="L" text="Contraseña" value={password} onChangeText={setPassword} secure />
+        <Field text="Nombre completo" value={name} onChangeText={setName} autoCapitalize="words" />
+        <Field text="Teléfono (opcional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+        <Field text="Correo electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+        <Field text="Contraseña" value={password} onChangeText={setPassword} secure />
         <Text selectable style={styles.helpText}>
           Minimo 8 caracteres, con letras y numeros.
         </Text>
-        <Field icon="L" text="Confirmar contraseña" value={confirmation} onChangeText={setConfirmation} secure />
+        <Field text="Confirmar contraseña" value={confirmation} onChangeText={setConfirmation} secure />
         {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
         <PrimaryButton label={loading ? 'Registrando...' : 'Registrarme'} onPress={register} disabled={loading} />
         <Text selectable onPress={() => navigate('login')} style={styles.centerLink}>
@@ -716,8 +717,9 @@ function Field({ icon, text, trail, value, onChangeText, keyboardType, autoCapit
   secure?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
+  const [focused, setFocused] = useState(false);
   return (
-    <View style={styles.field}>
+    <View style={[styles.field, focused && styles.fieldFocused]}>
       {icon && (
         <Text selectable style={styles.fieldIcon}>
           {icon}
@@ -728,7 +730,9 @@ function Field({ icon, text, trail, value, onChangeText, keyboardType, autoCapit
           accessibilityLabel={text}
           autoCapitalize={autoCapitalize ?? 'none'}
           keyboardType={keyboardType ?? 'default'}
+          onBlur={() => setFocused(false)}
           onChangeText={onChangeText}
+          onFocus={() => setFocused(true)}
           placeholder={text}
           placeholderTextColor="#7d8683"
           secureTextEntry={secure && !visible}
@@ -992,10 +996,12 @@ function Icon({ label, large }: { label: string; large?: boolean }) {
   );
 }
 
-function MiniFeature({ icon, label }: { icon: string; label: string }) {
+function MiniFeature({ icon, label }: { icon: SymbolViewProps['name']; label: string }) {
   return (
     <View style={styles.feature}>
-      <Icon label={icon} />
+      <View style={styles.iconCircle}>
+        <SymbolView name={icon} size={18} tintColor="#155136" />
+      </View>
       <Text selectable style={styles.featureText}>
         {label}
       </Text>
@@ -1229,13 +1235,26 @@ const styles = StyleSheet.create({
   tabLabel: { color: '#58615f', fontSize: 13, fontWeight: '700' },
   tabActive: { color: '#155136' },
   tabLine: { width: 34, height: 3, borderRadius: 4, backgroundColor: '#155136' },
-  authCard: { margin: 14, marginTop: -10, padding: 20, borderRadius: 24, backgroundColor: '#fff', gap: 12, boxShadow: '0 16px 44px rgba(25,55,41,0.12)' },
+  authCard: { margin: 14, marginTop: -10, paddingHorizontal: 20, paddingVertical: 22, borderRadius: 24, backgroundColor: '#fff', gap: 12, boxShadow: '0 16px 44px rgba(25,55,41,0.12)' },
+  authForm: { width: '94%', maxWidth: 340, alignSelf: 'center', gap: 12 },
   logo: { alignSelf: 'center', width: 80, height: 80, borderRadius: 40, backgroundColor: '#dceee4', alignItems: 'center', justifyContent: 'center' },
   logoText: { color: '#155136', fontSize: 16, fontWeight: '900' },
   authTitle: { color: '#073d2d', fontSize: 29, fontWeight: '900', textAlign: 'center', letterSpacing: 0 },
   authCopy: { color: '#717a7a', fontSize: 16, lineHeight: 22, textAlign: 'center' },
-  field: { minHeight: 56, borderRadius: 14, borderWidth: 1, borderColor: '#d1d8d6', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, backgroundColor: '#fff' },
-  fieldInput: { flex: 1, minWidth: 0, color: '#17221d', fontSize: 16, paddingVertical: 12 },
+  field: { minHeight: 56, width: '100%', borderRadius: 14, borderWidth: 1, borderColor: '#c8d4ce', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, backgroundColor: '#fff' },
+  fieldFocused: { borderColor: '#1f6a43', borderWidth: 2, boxShadow: '0 0 0 3px rgba(31,106,67,0.10)' },
+  fieldInput: {
+    flex: 1,
+    minWidth: 0,
+    color: '#17221d',
+    fontSize: 16,
+    paddingVertical: 12,
+    borderWidth: 0,
+    outlineColor: 'transparent',
+    outlineStyle: 'solid',
+    outlineWidth: 0,
+    backgroundColor: 'transparent',
+  },
   formFeedback: { color: '#9b1d1e', fontSize: 14, lineHeight: 20, fontWeight: '700' },
   disabled: { opacity: 0.6 },
   fieldIcon: { color: '#39413f', fontSize: 17, fontWeight: '900', width: 20, textAlign: 'center' },
@@ -1257,7 +1276,6 @@ const styles = StyleSheet.create({
   profilePhoto: { width: 94, height: 94, borderRadius: 47, borderWidth: 2, borderStyle: 'dashed', borderColor: '#8ab09f', backgroundColor: '#e5f1ea', alignItems: 'center', justifyContent: 'center' },
   profileIcon: { color: '#155136', fontSize: 24, fontWeight: '900' },
   addCircle: { position: 'absolute', right: -2, bottom: 8, width: 36, height: 36, borderRadius: 18, backgroundColor: '#2f6d49', alignItems: 'center', justifyContent: 'center' },
-  addText: { color: '#fff', fontSize: 26, lineHeight: 28 },
   formTitle: { color: '#050806', fontSize: 18, fontWeight: '900', letterSpacing: 0 },
   lightText: { fontWeight: '500', color: '#313b39' },
   formCopy: { color: '#59635f', fontSize: 15, lineHeight: 20, fontWeight: '500' },
