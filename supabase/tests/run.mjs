@@ -374,6 +374,25 @@ try {
       assert.equal((await query('update profiles set full_name=$1 where id=$2', ['Nombre A', a])).rowCount, 1);
     });
   });
+  await test('18b Profile images are private, size-limited and owner-write-only', async () => {
+    assert.deepEqual(
+      (await rows("select public,file_size_limit,allowed_mime_types from storage.buckets where id='profile-images'"))[0],
+      { public: false, file_size_limit: '2097152', allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp'] },
+    );
+    const avatar = a + '/' + randomUUID() + '.jpg';
+    await as('authenticated', b, async () => {
+      await rejected("insert into storage.objects(bucket_id,name) values ('profile-images',$1)", [avatar]);
+    });
+    await as('authenticated', a, async () => {
+      await query("insert into storage.objects(bucket_id,name) values ('profile-images',$1)", [avatar]);
+    });
+    await as('anon', null, async () => assert.equal(await count('storage.objects', 'name=$1', [avatar]), 0));
+    await as('authenticated', b, async () => {
+      assert.equal(await count('storage.objects', 'name=$1', [avatar]), 1);
+      assert.equal((await query('delete from storage.objects where name=$1', [avatar])).rowCount, 0);
+    });
+    await as('authenticated', a, async () => assert.equal((await query('delete from storage.objects where name=$1', [avatar])).rowCount, 1));
+  });
   await test('19 Reusable updated_at triggers and schema security inventory', async () => {
     assert.equal(Number((await rows("select count(*) n from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity"))[0].n), 7);
     assert.equal(Number((await rows("select count(*) n from pg_trigger where not tgisinternal and tgname like '%set_updated_at'"))[0].n), 3);
@@ -390,7 +409,7 @@ try {
       'route_track_points_route_sequence_key', 'route_points_route_id_idx', 'route_point_services_point_type_key',
       'route_equipment_route_id_idx', 'route_pauses_route_id_idx']) assert.ok(indexNames.includes(name), name);
     assert.equal(Number((await rows("select count(*) n from pg_policies where schemaname='public'"))[0].n), 26);
-    assert.equal(Number((await rows("select count(*) n from pg_policies where schemaname='storage'"))[0].n), 4);
+    assert.equal(Number((await rows("select count(*) n from pg_policies where schemaname='storage'"))[0].n), 8);
     for (const table of ['profiles', 'routes', 'route_track_points', 'route_points', 'route_point_services', 'route_equipment', 'route_pauses']) {
       assert.equal((await rows("select has_table_privilege('anon',$1,'INSERT,UPDATE,DELETE,TRUNCATE') allowed", ['public.' + table]))[0].allowed, false);
       assert.equal((await rows("select has_table_privilege('authenticated',$1,'TRUNCATE') allowed", ['public.' + table]))[0].allowed, false);

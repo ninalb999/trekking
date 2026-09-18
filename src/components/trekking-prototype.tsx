@@ -31,6 +31,13 @@ import {
   type PublicRouteDetail,
   type PublicRouteSummary,
 } from '@/lib/public-routes';
+import {
+  clearPendingProfileImage,
+  pickProfileImage,
+  savePendingProfileImage,
+  uploadPendingProfileImage,
+  type ProfileImageSelection,
+} from '@/lib/profile-images';
 
 type ScreenId = AuthScreen;
 
@@ -86,6 +93,11 @@ export function TrekkingPrototype() {
     const { data: subscription } = getSupabase().auth.onAuthStateChange((event, session) => {
       receivedAuthEvent = true;
       setOwnerId(session?.user.id ?? null);
+      if (session?.user.id) {
+        void uploadPendingProfileImage(session.user.id).catch(() => {
+          if (active) setSessionFeedback('Tu cuenta está activa, pero la foto de perfil aún no pudo subirse. Se reintentará al iniciar sesión.');
+        });
+      }
       applyAuthEvent(event, Boolean(session));
     });
     getSession().then(({ data }) => {
@@ -331,7 +343,25 @@ function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pickingPhoto, setPickingPhoto] = useState(false);
+  const [profileImage, setProfileImage] = useState<ProfileImageSelection | null>(null);
   const [feedback, setFeedback] = useState('');
+
+  const chooseProfileImage = async () => {
+    if (pickingPhoto || loading) return;
+    // On web the picker may not resolve when the user cancels, so do not leave
+    // the control disabled while the native browser dialog is open.
+    if (process.env.EXPO_OS !== 'web') setPickingPhoto(true);
+    setFeedback('');
+    try {
+      const image = await pickProfileImage();
+      if (image) setProfileImage(image);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'No se pudo seleccionar la foto.');
+    } finally {
+      if (process.env.EXPO_OS !== 'web') setPickingPhoto(false);
+    }
+  };
 
   const register = async () => {
     if (loading) return;
@@ -355,22 +385,32 @@ function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
       return;
     }
 
+    let registrationAccepted = false;
     setLoading(true);
     try {
+      if (profileImage) await savePendingProfileImage(profileImage);
       const { data, error } = await signUp(normalizedEmail, password, fullName, phone.trim());
       if (error) {
+        if (profileImage) await clearPendingProfileImage();
         setFeedback(error.code === 'user_already_exists' || /already registered/i.test(error.message)
           ? 'Ya existe una cuenta con ese correo.'
           : error.message);
         return;
       }
+      registrationAccepted = true;
       if (data.session) {
+        if (profileImage) await uploadPendingProfileImage(data.session.user.id);
         navigate('home');
       } else {
-        setFeedback('Si el registro fue aceptado, revisa tu correo para confirmar la cuenta.');
+        setFeedback(profileImage
+          ? 'Revisa tu correo para confirmar la cuenta. Tu foto se subirá cuando inicies sesión.'
+          : 'Si el registro fue aceptado, revisa tu correo para confirmar la cuenta.');
       }
     } catch {
-      setFeedback('No se pudo completar el registro. Inténtalo de nuevo.');
+      if (profileImage && !registrationAccepted) await clearPendingProfileImage();
+      setFeedback(registrationAccepted
+        ? 'La cuenta fue creada, pero la foto aún no pudo subirse. Se reintentará cuando inicies sesión.'
+        : 'No se pudo completar el registro. Inténtalo de nuevo.');
     } finally {
       setLoading(false);
     }
@@ -381,14 +421,19 @@ function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
       <Hero title="Crear cuenta" subtitle="Unete a nuestra comunidad y comienza a explorar." />
       <View style={styles.sheet}>
         <View style={styles.profileRow}>
-          <View style={styles.profilePhoto}>
-            <Text selectable style={styles.profileIcon}>
-              C
-            </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={profileImage ? 'Cambiar foto de perfil' : 'Agregar foto de perfil'}
+            disabled={pickingPhoto || loading}
+            onPress={chooseProfileImage}
+            style={({ pressed }) => [styles.profilePhoto, pressed && styles.pressed, (pickingPhoto || loading) && styles.disabled]}>
+            {profileImage
+              ? <Image source={{ uri: profileImage.uri }} style={styles.profilePreview} />
+              : <Text selectable style={styles.profileIcon}>{pickingPhoto ? '…' : 'C'}</Text>}
             <View style={styles.addCircle}>
               <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={20} tintColor="#fff" />
             </View>
-          </View>
+          </Pressable>
           <View style={styles.flex}>
             <Text selectable style={styles.formTitle}>
               Foto de perfil <Text style={styles.lightText}>(opcional)</Text>
@@ -1355,6 +1400,7 @@ const styles = StyleSheet.create({
   sheet: { padding: 16, gap: 12, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 8 },
   profilePhoto: { width: 94, height: 94, borderRadius: 47, borderWidth: 2, borderStyle: 'dashed', borderColor: '#8ab09f', backgroundColor: '#e5f1ea', alignItems: 'center', justifyContent: 'center' },
+  profilePreview: { width: 90, height: 90, borderRadius: 45 },
   profileIcon: { color: '#155136', fontSize: 24, fontWeight: '900' },
   addCircle: { position: 'absolute', right: -2, bottom: 8, width: 36, height: 36, borderRadius: 18, backgroundColor: '#2f6d49', alignItems: 'center', justifyContent: 'center' },
   formTitle: { color: '#050806', fontSize: 18, fontWeight: '900', letterSpacing: 0 },
