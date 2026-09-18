@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Trekking synthetic test" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>Recorrido sintetico de prueba - no usar para navegar</name><trkseg>
+    <trkpt lat="-16.50000" lon="-68.15000"><time>2026-09-16T12:00:00Z</time></trkpt>
+    <trkpt lat="-16.49995" lon="-68.15000"><time>2026-09-16T12:00:05Z</time></trkpt>
+    <trkpt lat="-16.49990" lon="-68.15000"><time>2026-09-16T12:00:10Z</time></trkpt>
+    <trkpt lat="-16.49985" lon="-68.15000"><time>2026-09-16T12:00:15Z</time></trkpt>
+    <trkpt lat="-16.49980" lon="-68.15000"><time>2026-09-16T12:00:20Z</time></trkpt>
+    <trkpt lat="-16.49975" lon="-68.15000"><time>2026-09-16T12:00:25Z</time></trkpt>
+    <trkpt lat="-16.49970" lon="-68.15000"><time>2026-09-16T12:00:30Z</time></trkpt>
+    <trkpt lat="-16.49965" lon="-68.15000"><time>2026-09-16T12:00:35Z</time></trkpt>
+    <trkpt lat="-16.49960" lon="-68.15000"><time>2026-09-16T12:00:40Z</time></trkpt>
+    <trkpt lat="-16.49955" lon="-68.15000"><time>2026-09-16T12:00:45Z</time></trkpt>
+    <trkpt lat="-16.49950" lon="-68.15000"><time>2026-09-16T12:00:50Z</time></trkpt>
+  </trkseg></trk>
+</gpx>

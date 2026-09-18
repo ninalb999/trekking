@@ -1,5 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import * as ImagePicker from 'expo-image-picker';
+import { File, Paths } from 'expo-file-system';
 
 import { getSupabase } from '@/lib/supabase';
 import {
@@ -28,14 +29,24 @@ export async function pickRouteImage(): Promise<RouteImageSelection | null> {
     allowsEditing: true,
     aspect: [16, 9],
     quality: 0.85,
+    base64: process.env.EXPO_OS === 'web',
   });
   if (result.canceled) return null;
 
   const asset = result.assets[0];
   const contentType = routeImageMime(asset.mimeType, asset.fileName);
   assertRouteImageSize(asset.fileSize);
+  let uri = asset.uri;
+  if (process.env.EXPO_OS === 'web') {
+    if (!asset.base64) throw new Error('No se pudo conservar la fotografia.');
+    uri = `data:${contentType};base64,${asset.base64}`;
+  } else {
+    const file = new File(Paths.document, `trekking-${Crypto.randomUUID()}.${routeImageExtension(contentType)}`);
+    await new File(uri).copy(file);
+    uri = file.uri;
+  }
   return {
-    uri: asset.uri,
+    uri,
     extension: routeImageExtension(contentType),
     contentType,
     fileSize: asset.fileSize,
@@ -58,9 +69,9 @@ export async function uploadRouteMainImage(routeId: string, image: RouteImageSel
   if (routeError) throw routeError;
   if (!route) throw new Error('No se encontró una ruta propia para asociar la fotografía.');
 
-  const response = await fetch(image.uri);
-  if (!response.ok) throw new Error('No se pudo leer la fotografía seleccionada.');
-  const contents = await response.arrayBuffer();
+  const contents = process.env.EXPO_OS === 'web'
+    ? await (await fetch(image.uri)).arrayBuffer()
+    : await new File(image.uri).arrayBuffer();
   assertRouteImageSize(contents.byteLength);
   const path = `${routeId}/${Crypto.randomUUID()}.${routeImageExtension(contentType)}`;
   const { error: uploadError } = await supabase.storage

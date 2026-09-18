@@ -325,6 +325,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      public_route_catalog: {
+        Args: {
+          difficulty_filter?: string
+          limit_count?: number
+          search_text?: string
+        }
+        Returns: {
+          active_duration_seconds: number
+          description: string
+          difficulty: string
+          equipment: string[]
+          id: string
+          main_image_path: string
+          name: string
+          owner_name: string
+          pause_count: number
+          point_count: number
+          published_at: string
+          total_distance_m: number
+        }[]
+      }
+      public_route_detail: { Args: { route_id: string }; Returns: Json }
       save_recorded_route_v1: { Args: { payload: Json }; Returns: string }
     }
     Enums: {
