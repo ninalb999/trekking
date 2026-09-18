@@ -8,10 +8,8 @@ export class Recording {
   points: TrackPoint[] = [];
   distance = 0;
   status: 'idle' | 'recording' | 'paused' | 'finished' = 'idle';
-  startedAt = 0;
-  pauseCount = 0;
   private accumulated = 0;
-  private activeStartedAt = 0;
+  private startedAt = 0;
   private segment = 0;
   private lastReadingAt = 0;
   start(now: number) { this.status = 'recording'; this.startedAt = now; if (!this.started) this.started = now; }
