@@ -42,10 +42,16 @@ Esta opcion sirve para revisar pantallas y formularios. Para GPS real conviene p
 
 ## Correr En Celular Con Expo Go
 
-Usa tunel cuando la PC y el celular no estan en la misma red Wi-Fi.
+Si la PC y el celular estan en la misma red Wi-Fi, usa LAN. Es la opcion mas estable para pruebas locales:
 
 ```bash
-npx expo start --tunnel --clear
+npm run start:lan
+```
+
+Si no estan en la misma red, usa tunel:
+
+```bash
+npm run start:tunnel
 ```
 
 Luego:
@@ -55,11 +61,21 @@ Luego:
 3. Acepta permisos de ubicacion precisa cuando la app los pida.
 4. Manten la app abierta mientras grabas una ruta.
 
-Si Expo vuelve a pedir instalar `@expo/ngrok`, deten el proceso con `Ctrl + C`, ejecuta `npm install` y vuelve a correr:
+Si Expo vuelve a pedir instalar `@expo/ngrok`, deten el proceso con `Ctrl + C`, ejecuta `npm install` y vuelve a correr `npm run start:tunnel`.
+
+Si el tunel falla con este error:
+
+```text
+CommandError: TypeError: Cannot read properties of undefined (reading 'body')
+```
+
+significa que Expo no pudo obtener una respuesta valida del servicio de tuneles de ngrok. Para seguir probando sin depender de ngrok, conecta la PC y el celular a la misma red Wi-Fi o al mismo hotspot y corre:
 
 ```bash
-npx expo start --tunnel --clear
+npm run start:lan
 ```
+
+Si el puerto `8081` esta ocupado, puedes cerrar el otro Metro con `Ctrl + C` o aceptar el puerto alternativo que Expo proponga. Escanea siempre el QR nuevo que aparece despues de elegir el puerto.
 
 Si el QR no aparece pero Metro queda activo, revisa que diga:
 

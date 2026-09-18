@@ -263,9 +263,6 @@ function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback }: {
           <FilterPill label="Novato" tone="green" active={difficulty === 'Novato'} onPress={() => setDifficulty(difficulty === 'Novato' ? '' : 'Novato')} />
           <FilterPill label="Intermedio" tone="sand" active={difficulty === 'Intermedio'} onPress={() => setDifficulty(difficulty === 'Intermedio' ? '' : 'Intermedio')} />
           <FilterPill label="Experto" tone="red" active={difficulty === 'Experto'} onPress={() => setDifficulty(difficulty === 'Experto' ? '' : 'Experto')} />
-          <Pill label="Mas recientes" />
-          <Pill label="Mas visitadas" />
-          <Pill label="Cerca de mi" />
         </View>
         {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
         {loading && <Text selectable style={styles.formCopy}>Cargando rutas publicas...</Text>}
