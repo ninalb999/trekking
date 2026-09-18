@@ -746,9 +746,11 @@ function DetailScreen({ navigate, route }: { navigate: (screen: ScreenId) => voi
 function SearchBox({ text, value, onChangeText }: { text: string; value: string; onChangeText: (value: string) => void }) {
   return (
     <View style={styles.search}>
-      <Text selectable style={styles.searchIcon}>
-        Q
-      </Text>
+      <SymbolView
+        name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }}
+        size={20}
+        tintColor="#1d2b27"
+      />
       <TextInput
         accessibilityLabel="Buscar rutas"
         autoCapitalize="none"
@@ -758,6 +760,21 @@ function SearchBox({ text, value, onChangeText }: { text: string; value: string;
         style={styles.searchInput}
         value={value}
       />
+      {!!value && (
+        <Pressable
+          accessibilityLabel="Limpiar búsqueda"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => onChangeText('')}
+          style={({ pressed }) => [styles.searchClearButton, pressed && styles.pressed]}
+        >
+          <SymbolView
+            name={{ ios: 'xmark.circle.fill', android: 'close', web: 'close' }}
+            size={22}
+            tintColor="#52605a"
+          />
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -1221,7 +1238,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  searchIcon: { color: '#1d2b27', fontSize: 20, fontWeight: '900' },
+  searchClearButton: { alignItems: 'center', justifyContent: 'center', minHeight: 32, minWidth: 32 },
   placeholder: { color: '#7d8683', fontSize: 16, flex: 1 },
   searchInput: { flex: 1, minWidth: 0, color: '#17221d', fontSize: 16, paddingVertical: 10, outlineColor: 'transparent', outlineStyle: 'solid', outlineWidth: 0 },
   filterPillActive: { borderRadius: 18, boxShadow: '0 0 0 2px rgba(21,81,54,0.28)' },
