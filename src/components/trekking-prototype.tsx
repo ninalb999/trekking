@@ -36,6 +36,7 @@ import {
   uploadPendingProfileImage,
   type ProfileImageSelection,
 } from '@/lib/profile-images';
+import { getRouteMainImageUrl } from '@/lib/route-detail';
 
 type ScreenId = AuthScreen;
 
@@ -57,6 +58,7 @@ export function TrekkingPrototype() {
   const [activeTab, setActiveTab] = useState('Inicio');
   const [authenticated, setAuthenticated] = useState(false);
   const [sessionFeedback, setSessionFeedback] = useState('');
+  const [notice, setNotice] = useState('');
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const phoneWidth = Math.min(width, 430);
@@ -68,6 +70,10 @@ export function TrekkingPrototype() {
     if (next === 'routes') setActiveTab('Mis rutas');
     if (next === 'record' || next === 'point' || next === 'finish') setActiveTab('Grabar');
     setCurrentScreen(next);
+  };
+  const showNotice = (message: string) => {
+    setNotice(message);
+    setTimeout(() => setNotice(current => current === message ? '' : current), 3800);
   };
 
   useEffect(() => {
@@ -91,14 +97,26 @@ export function TrekkingPrototype() {
       receivedAuthEvent = true;
       setOwnerId(session?.user.id ?? null);
       if (session?.user.id) {
-        void uploadPendingProfileImage(session.user.id).catch(() => {
-          if (active) setSessionFeedback('Tu cuenta está activa, pero la foto de perfil aún no pudo subirse. Se reintentará al iniciar sesión.');
+        void uploadPendingProfileImage(session.user.id).then(uploaded => {
+          if (active && uploaded) showNotice('Foto de perfil guardada con éxito.');
+        }).catch(() => {
+          if (active) {
+            setSessionFeedback('Tu cuenta está activa, pero la foto de perfil aún no pudo subirse. Se reintentará al iniciar sesión.');
+          }
         });
       }
       applyAuthEvent(event, Boolean(session));
     });
     getSession().then(({ data }) => {
-      if (!receivedAuthEvent) { setOwnerId(data.session?.user.id ?? null); applyAuthEvent('INITIAL_SESSION', Boolean(data.session)); }
+      const restoredUserId = data.session?.user.id ?? null;
+      if (restoredUserId) {
+        void uploadPendingProfileImage(restoredUserId).then(uploaded => {
+          if (active && uploaded) showNotice('Foto de perfil guardada con éxito.');
+        }).catch(() => {
+          if (active) setSessionFeedback('Tu cuenta está activa, pero la foto de perfil aún no pudo subirse. Se reintentará al iniciar sesión.');
+        });
+      }
+      if (!receivedAuthEvent) { setOwnerId(restoredUserId); applyAuthEvent('INITIAL_SESSION', Boolean(data.session)); }
     }).catch(() => {
       if (active && !receivedAuthEvent) {
         setAuthenticated(false);
@@ -132,17 +150,18 @@ export function TrekkingPrototype() {
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="never">
         {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} sessionFeedback={sessionFeedback} />}
-        {screen === 'login' && <LoginScreen navigate={setScreen} />}
-        {screen === 'register' && <RegisterScreen navigate={setScreen} />}
+        {screen === 'login' && <LoginScreen navigate={setScreen} onNotice={showNotice} />}
+        {screen === 'register' && <RegisterScreen navigate={setScreen} onNotice={showNotice} />}
         {screen === 'routes' && <SavedRoutes ownerId={ownerId} message={recording.saveStatus} create={() => setScreen('record')} open={route => {
           if (route.status !== 'finished' || !route.name) { recording.restore(route); setScreen(route.status === 'finished' ? 'finish' : 'record'); }
           else { setSelectedRoute(route); setScreen('detail'); }
         }} />}
         {screen === 'record' && <RecordingScreen navigate={setScreen} recording={recording} />}
         {screen === 'point' && <PointForm recording={recording} back={() => setScreen('record')} />}
-        {screen === 'finish' && <FinishForm recording={recording} done={() => setScreen('routes')} />}
+        {screen === 'finish' && <FinishForm recording={recording} done={() => { showNotice('Ruta guardada con éxito.'); setScreen('routes'); }} />}
         {screen === 'detail' && selectedRoute && <SavedRouteDetail route={selectedRoute} back={() => { setSelectedRoute(null); setScreen('routes'); }} />}
         </ScrollView>
+        {!!notice && <NoticeBanner message={notice} />}
         {!isAuth && (
           <View style={{ paddingBottom: insets.bottom, backgroundColor: '#fff', flexShrink: 0 }}>
             <BottomTabs active={activeTab} navigate={setScreen} />
@@ -165,6 +184,14 @@ function PhoneStatus() {
         </Text>
         <View style={styles.battery} />
       </View>
+    </View>
+  );
+}
+
+function NoticeBanner({ message }: { message: string }) {
+  return (
+    <View accessibilityRole="alert" style={styles.notice}>
+      <Text selectable style={styles.noticeText}>{message}</Text>
     </View>
   );
 }
@@ -252,7 +279,7 @@ function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback }: {
   );
 }
 
-function LoginScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+function LoginScreen({ navigate, onNotice }: { navigate: (screen: ScreenId) => void; onNotice: (message: string) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -277,7 +304,7 @@ function LoginScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
             : error.message);
         return;
       }
-      if (data.session) navigate('home');
+      if (data.session) { onNotice('Inicio de sesión correcto.'); navigate('home'); }
     } catch {
       setFeedback('No se pudo iniciar sesión. Inténtalo de nuevo.');
     } finally {
@@ -301,8 +328,8 @@ function LoginScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
           Continúa tu aventura y descubre nuevas rutas
         </Text>
         <View style={styles.authForm}>
-          <Field text="Correo electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
-          <Field text="Contraseña" value={password} onChangeText={setPassword} secure />
+          <Field text="Correo electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" maxLength={120} />
+          <Field text="Contraseña" value={password} onChangeText={setPassword} secure maxLength={64} />
           <Text selectable style={styles.forgot}>
             ¿Olvidaste tu contraseña?
           </Text>
@@ -322,7 +349,7 @@ function LoginScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
   );
 }
 
-function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+function RegisterScreen({ navigate, onNotice }: { navigate: (screen: ScreenId) => void; onNotice: (message: string) => void }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -386,8 +413,10 @@ function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
       registrationAccepted = true;
       if (data.session) {
         if (profileImage) await uploadPendingProfileImage(data.session.user.id);
+        onNotice(profileImage ? 'Cuenta creada y foto de perfil guardada con éxito.' : 'Cuenta creada con éxito.');
         navigate('home');
       } else {
+        onNotice('Registro creado. Revisa tu correo para confirmar la cuenta.');
         setFeedback(profileImage
           ? 'Revisa tu correo para confirmar la cuenta. Tu foto se subirá cuando inicies sesión.'
           : 'Si el registro fue aceptado, revisa tu correo para confirmar la cuenta.');
@@ -429,14 +458,14 @@ function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
             </Text>
           </View>
         </View>
-        <Field text="Nombre completo" value={name} onChangeText={setName} autoCapitalize="words" />
-        <Field text="Teléfono (opcional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-        <Field text="Correo electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
-        <Field text="Contraseña" value={password} onChangeText={setPassword} secure />
+        <Field text="Nombre completo" value={name} onChangeText={setName} autoCapitalize="words" maxLength={80} />
+        <Field text="Teléfono (opcional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" maxLength={20} />
+        <Field text="Correo electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" maxLength={120} />
+        <Field text="Contraseña" value={password} onChangeText={setPassword} secure maxLength={64} />
         <Text selectable style={styles.helpText}>
           Minimo 8 caracteres, con letras y numeros.
         </Text>
-        <Field text="Confirmar contraseña" value={confirmation} onChangeText={setConfirmation} secure />
+        <Field text="Confirmar contraseña" value={confirmation} onChangeText={setConfirmation} secure maxLength={64} />
         {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
         <PrimaryButton label={loading ? 'Registrando...' : 'Registrarme'} onPress={register} disabled={loading} />
         <Text selectable onPress={() => navigate('login')} style={styles.centerLink}>
@@ -725,7 +754,7 @@ function SearchBox({ text, value, onChangeText }: { text: string; value: string;
   );
 }
 
-function Field({ icon, text, trail, value, onChangeText, keyboardType, autoCapitalize, secure }: {
+function Field({ icon, text, trail, value, onChangeText, keyboardType, autoCapitalize, secure, maxLength }: {
   icon?: string;
   text: string;
   trail?: string;
@@ -734,6 +763,7 @@ function Field({ icon, text, trail, value, onChangeText, keyboardType, autoCapit
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
   autoCapitalize?: 'none' | 'sentences' | 'words';
   secure?: boolean;
+  maxLength?: number;
 }) {
   const [visible, setVisible] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -749,6 +779,7 @@ function Field({ icon, text, trail, value, onChangeText, keyboardType, autoCapit
           accessibilityLabel={text}
           autoCapitalize={autoCapitalize ?? 'none'}
           keyboardType={keyboardType ?? 'default'}
+          maxLength={maxLength}
           onBlur={() => setFocused(false)}
           onChangeText={onChangeText}
           onFocus={() => setFocused(true)}
@@ -806,9 +837,19 @@ function FilterPill({ label, tone, active, onPress }: { label: string; tone: str
 }
 
 function RouteCard({ route, index, onPress }: { route: PublicRouteSummary; index: number; onPress?: () => void }) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    if (!route.imagePath) {
+      setImageUrl(null);
+      return () => { active = false; };
+    }
+    getRouteMainImageUrl(route.imagePath).then(url => { if (active) setImageUrl(url); }).catch(() => { if (active) setImageUrl(null); });
+    return () => { active = false; };
+  }, [route.imagePath]);
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.routeCard, pressed && styles.pressed]}>
-      <Photo seed={index} />
+      {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.routeThumb} /> : <Photo seed={index} />}
       <View style={styles.flex}>
         <Text selectable style={styles.routeTitle}>
           {route.name}
@@ -1108,6 +1149,23 @@ const styles = StyleSheet.create({
   selectorCopy: { color: '#737d78', fontSize: 11, fontWeight: '700', marginTop: 3 },
   selectorCopyActive: { color: '#dcefe3' },
   pressed: { opacity: 0.76 },
+  notice: {
+    position: 'absolute',
+    top: 54,
+    left: 18,
+    right: 18,
+    zIndex: 50,
+    minHeight: 52,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 18,
+    backgroundColor: '#e7f3eb',
+    borderWidth: 1,
+    borderColor: '#b9dcc8',
+    boxShadow: '0 8px 22px rgba(13, 65, 40, 0.18)',
+    justifyContent: 'center',
+  },
+  noticeText: { color: '#124733', fontSize: 14, lineHeight: 19, fontWeight: '900', textAlign: 'center' },
   phone: {
     overflow: 'hidden',
     minHeight: 0,
@@ -1196,6 +1254,7 @@ const styles = StyleSheet.create({
   meta: { flexDirection: 'row', gap: 12, marginTop: 8 },
   metaText: { color: '#17201c', fontSize: 13, fontWeight: '800' },
   heart: { color: '#111a18', fontSize: 24, fontWeight: '700' },
+  routeThumb: { width: 76, height: 76, borderRadius: 38, backgroundColor: '#dce8d7' },
   photo: { width: 112, height: 72, borderRadius: 11, overflow: 'hidden', backgroundColor: '#8cc5df' },
   photoTall: { width: 104, height: 124 },
   photoWide: { flex: 1, height: 96 },

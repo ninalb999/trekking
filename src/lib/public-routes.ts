@@ -122,6 +122,7 @@ export async function getPublicRouteDetail(id: string): Promise<PublicRouteDetai
       longitude: Number(raw.longitude),
       accuracy: null,
       timestamp: Date.now() + index,
+      photo: typeof raw.photo === 'string' ? raw.photo : undefined,
     };
   }).filter(place => Number.isFinite(place.latitude) && Number.isFinite(place.longitude)) : [];
   return { ...summary, points, places };
@@ -144,6 +145,9 @@ function fallbackDetail(route: PublicRouteSummary): PublicRouteDetail {
   return {
     ...route,
     points,
-    places: [{ id: `${route.id}-start`, name: 'Inicio', description: 'Punto de partida', type: 'otro', services: [], latitude: points[0].latitude, longitude: points[0].longitude, accuracy: 12, timestamp: now }],
+    places: [
+      { id: `${route.id}-start`, name: 'Inicio', description: 'Punto de partida', type: 'otro', services: [], latitude: points[0].latitude, longitude: points[0].longitude, accuracy: 12, timestamp: now },
+      { id: `${route.id}-camp`, name: 'Campamento base', description: 'Zona de descanso con vista abierta.', type: 'campamento', services: ['water', 'lodging'], latitude: points[1].latitude, longitude: points[1].longitude, accuracy: 12, timestamp: now + 300000 },
+    ],
   };
 }

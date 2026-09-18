@@ -1,8 +1,8 @@
 import { leafletCss, leafletJs } from '../generated/leaflet-assets';
 import type { TrackPoint } from './recording';
-export type MapData = { points: TrackPoint[]; location?: { latitude: number; longitude: number; accuracy: number | null } | null; places?: { latitude: number; longitude: number; name: string }[]; overview?: boolean };
+export type MapData = { points: TrackPoint[]; location?: { latitude: number; longitude: number; accuracy: number | null } | null; places?: { latitude: number; longitude: number; name: string; description?: string; type?: string; services?: string[]; photo?: string }[]; overview?: boolean };
 export const mapDocument = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>${leafletCss}html,body,#map{margin:0;width:100%;height:100%;}#message{position:absolute;bottom:28px;left:8px;right:8px;z-index:1000;background:white;font:13px sans-serif;padding:8px;display:none;}#center{position:absolute;top:10px;right:10px;z-index:1000;background:white;border:1px solid #aaa;padding:10px;border-radius:4px;}</style></head>
+<style>${leafletCss}html,body,#map{margin:0;width:100%;height:100%;}#message{position:absolute;bottom:28px;left:8px;right:8px;z-index:1000;background:white;font:13px sans-serif;padding:8px;display:none;}#center{position:absolute;top:10px;right:10px;z-index:1000;background:white;border:1px solid #aaa;padding:10px;border-radius:4px;}.popup{font:13px system-ui,sans-serif;max-width:210px}.popup h3{margin:0 0 4px;font-size:15px;color:#123f2d}.popup p{margin:4px 0;color:#43524b;line-height:1.35}.popup img{display:block;width:100%;height:92px;object-fit:cover;border-radius:14px;margin:0 0 8px}.tag{display:inline-block;margin:3px 4px 0 0;padding:3px 7px;border-radius:999px;background:#e8f1eb;color:#163d2d;font-size:11px;font-weight:700}</style></head>
 <body><div id="map"></div><button id="center" aria-label="Centrar mi ubicacion">Centrar</button><div id="message" role="status"></div>
 <script>${leafletJs.replace(/<\/script/gi, '<\\/script')}</script><script>
 const map=L.map('map').setView([-16.5,-68.15],12), layer=L.layerGroup().addTo(map);
@@ -13,6 +13,19 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribu
 .on('tileload',()=>message.style.display='none').addTo(map);
 map.on('dragstart',()=>following=false);
 document.getElementById('center').onclick=()=>{following=true;if(lastLocation)map.setView(lastLocation,16);};
+function clean(value){return String(value||'').replace(/[<>&"]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));}
+function placeType(value){return ({campamento:'Campamento',descanso:'Descanso',agua:'Agua',tienda:'Tienda',otro:'Otro'}[value]||value||'Punto');}
+function popupFor(place){
+  const services=Array.isArray(place.services)?place.services:[];
+  const serviceHtml=services.map(item=>'<span class="tag">'+clean(item)+'</span>').join('');
+  return '<div class="popup">'+
+    (place.photo?'<img src="'+clean(place.photo)+'" alt="Foto del punto">':'')+
+    '<h3>'+clean(place.name||'Punto de ruta')+'</h3>'+
+    '<p><strong>'+clean(placeType(place.type))+'</strong></p>'+
+    (place.description?'<p>'+clean(place.description)+'</p>':'')+
+    (serviceHtml?'<p>'+serviceHtml+'</p>':'')+
+    '</div>';
+}
 window.updateRoute=function(data){
   const key=JSON.stringify(data);if(key===lastKey)return;lastKey=key;
   layer.clearLayers();const segments=new Map();
@@ -20,7 +33,7 @@ window.updateRoute=function(data){
   for(const coordinates of segments.values())L.polyline(coordinates,{color:'#1f6a43',weight:5}).addTo(layer);
   const first=data.points&&data.points[0];
   if(first)L.circleMarker([first.latitude,first.longitude],{radius:7,color:'#1f6a43'}).bindTooltip('Inicio').addTo(layer);
-  for(const p of data.places||[]){const label=document.createElement('span');label.textContent=p.name;L.circleMarker([p.latitude,p.longitude],{radius:8,color:'#ad6419'}).bindTooltip(label).addTo(layer);}
+  for(const p of data.places||[]){const label=document.createElement('span');label.textContent=p.name;L.circleMarker([p.latitude,p.longitude],{radius:8,color:'#ad6419',fillColor:'#fff3df',fillOpacity:.9,weight:3}).bindTooltip(label).bindPopup(popupFor(p)).addTo(layer);}
   const current=data.location||(data.points||[]).slice(-1)[0];
   if(current){lastLocation=[current.latitude,current.longitude];L.circleMarker(lastLocation,{radius:7,color:'#2675ef'}).addTo(layer);
     if(current.accuracy>0)L.circle(lastLocation,{radius:current.accuracy,weight:1,color:'#2675ef',fillOpacity:0.08}).addTo(layer);

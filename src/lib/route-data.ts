@@ -1,6 +1,6 @@
 import type { TrackPoint } from './recording';
 import type { RouteImageMime } from './route-image-validation';
-export type Place = { id: string; name: string; description: string; type: string; services: string[]; latitude: number; longitude: number; accuracy: number | null; timestamp: number };
+export type Place = { id: string; name: string; description: string; type: string; services: string[]; latitude: number; longitude: number; accuracy: number | null; timestamp: number; photo?: string };
 export type RouteData = {
   id: string; ownerId: string | null; name: string; description: string;
   difficulty: string; visibility: 'private' | 'public'; equipment: string[]; photo?: string; imagePath?: string; photoType?: RouteImageMime;

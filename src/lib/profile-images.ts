@@ -91,12 +91,20 @@ export async function uploadProfileImage(userId: string, image: ProfileImageSele
   assertProfileImageSize(contents.byteLength);
 
   const supabase = getSupabase();
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('avatar_path')
-    .eq('id', userId)
-    .maybeSingle();
-  if (profileError) throw profileError;
+  let profile: { avatar_path: string | null } | null = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data, error: profileError } = await supabase
+      .from('profiles')
+      .select('avatar_path')
+      .eq('id', userId)
+      .maybeSingle();
+    if (profileError) throw profileError;
+    if (data) {
+      profile = data;
+      break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 350));
+  }
   if (!profile) throw new Error('No se encontró el perfil asociado a la cuenta.');
 
   const path = `${userId}/${Crypto.randomUUID()}.${routeImageExtension(contentType)}`;

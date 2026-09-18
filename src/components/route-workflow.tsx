@@ -17,11 +17,18 @@ const toggle = (items: string[], value: string) => items.includes(value) ? items
 
 export function PointForm({ recording, back }: { recording: Recorder; back: () => void }) {
   const [name, setName] = useState(''), [description, setDescription] = useState(''), [type, setType] = useState('Campamento');
+  const [photo, setPhoto] = useState('');
   const [selected, setSelected] = useState<string[]>([]), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const saving = useRef(false);
+  async function choosePhoto() {
+    try {
+      const result = await pickRouteImage();
+      if (result) setPhoto(result.uri);
+    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo cargar la foto del punto.'); }
+  }
   async function save() {
     if (saving.current) return; saving.current = true; setBusy(true);
-    try { await recording.addPlace({ name: name.trim(), description: description.trim(), type: types[type], services: selected.map(value => services[value]) }); back(); }
+    try { await recording.addPlace({ name: name.trim(), description: description.trim(), type: types[type], services: selected.map(value => services[value]), photo }); back(); }
     catch (e) { setError(e instanceof Error ? e.message : 'No se pudo guardar el punto.'); }
     finally { saving.current = false; setBusy(false); }
   }
@@ -30,6 +37,8 @@ export function PointForm({ recording, back }: { recording: Recorder; back: () =
     <Text style={ui.label}>Tipo de punto</Text><Choices values={Object.keys(types)} selected={[type]} onSelect={setType} />
     <Input label="Nombre del punto" value={name} onChangeText={setName} maxLength={100} placeholder="Ej. Mirador del valle" />
     <Input label="Descripcion del punto" value={description} onChangeText={setDescription} multiline maxLength={200} />
+    {photo && <Image source={photo} style={{ width: '100%', height: 128, borderRadius: 18 }} contentFit="cover" />}
+    <Action label={photo ? 'Cambiar foto del punto' : 'Agregar foto del punto'} disabled={busy} onPress={() => void choosePhoto()} />
     <Text style={ui.label}>Servicios disponibles</Text><Choices values={Object.keys(services)} selected={selected} onSelect={value => setSelected(toggle(selected, value))} multiple />
     <Text style={ui.muted}>{recording.location ? `${recording.location.latitude.toFixed(6)}, ${recording.location.longitude.toFixed(6)}` : 'Sin ubicacion'}</Text>
     {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
@@ -62,7 +71,7 @@ export function FinishForm({ recording, done }: { recording: Recorder; done: () 
     <Text style={ui.title}>Guardar ruta</Text>
     <Text style={ui.label}>{(data.distance / 1000).toFixed(2)} km · {formatElapsed(data.elapsed)} · {data.places.length} puntos</Text>
     <RouteMap points={data.points} places={data.places} overview />
-    {photo && <Image source={photo} style={{ width: '100%', height: 160 }} contentFit="cover" />}
+    {photo && <Image source={photo} style={{ width: '100%', height: 160, borderRadius: 20 }} contentFit="cover" />}
     <Action label={photo ? 'Cambiar foto' : 'Agregar foto'} onPress={() => void choosePhoto()} />
     <Input label="Nombre de la ruta" value={name} onChangeText={setName} maxLength={100} placeholder="Ej. Sendero del valle" />
     <Input label="Descripcion de la ruta" value={description} onChangeText={setDescription} multiline maxLength={500} />
@@ -109,6 +118,7 @@ export function SavedRoutes({ ownerId, open, create, message }: { ownerId: strin
       return (
       <Pressable key={route.id} accessibilityRole="button" accessibilityLabel={`Abrir ${route.name || 'Recorrido pendiente'}`} onPress={() => open(route)} style={{ padding: 14, gap: 8, borderBottomWidth: 1, borderColor: '#d5dfd7' }}>
         <Text style={ui.label}>{route.name || 'Recorrido pendiente'}</Text><Text>{(route.distance / 1000).toFixed(2)} km · {formatElapsed(route.elapsed)}</Text>
+        {route.photo && <Image source={route.photo} style={{ width: 76, height: 76, borderRadius: 38 }} contentFit="cover" />}
         <Text style={ui.muted}>{route.status === 'finished' ? 'Finalizada' : 'Continuar recorrido'} · {pending ? 'Pendiente de sincronizar' : 'Sincronizada'} · {route.visibility === 'public' ? 'Publica' : 'Privada'}</Text>
       </Pressable>
     );})}
@@ -119,7 +129,7 @@ export function SavedRoutes({ ownerId, open, create, message }: { ownerId: strin
 export function SavedRouteDetail({ route, back }: { route: RouteData; back: () => void }) {
   return <View style={ui.content}><Action label="Volver a Mis rutas" onPress={back} /><Text style={ui.title}>{route.name}</Text>
     <Text>{(route.distance / 1000).toFixed(2)} km · {formatElapsed(route.elapsed)} · {route.difficulty}</Text>
-    {route.photo && <Image source={route.photo} style={{ height: 180, width: '100%' }} />}
+    {route.photo && <Image source={route.photo} style={{ height: 180, width: '100%', borderRadius: 22 }} />}
     <RouteMap points={route.points} places={route.places} overview /><Text>{route.description}</Text>
     <Text style={ui.label}>Equipo</Text><Text>{route.equipment.join(', ') || 'Sin equipo indicado'}</Text>
     <Text style={ui.label}>Puntos del recorrido</Text>
