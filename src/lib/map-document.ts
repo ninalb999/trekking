@@ -1,6 +1,6 @@
 import { leafletCss, leafletJs } from '../generated/leaflet-assets';
 import type { TrackPoint } from './recording';
-export type MapData = { points: TrackPoint[]; location?: { latitude: number; longitude: number; accuracy: number | null } | null; places?: { latitude: number; longitude: number; name: string }[] };
+export type MapData = { points: TrackPoint[]; location?: { latitude: number; longitude: number; accuracy: number | null } | null; places?: { latitude: number; longitude: number; name: string }[]; overview?: boolean };
 export const mapDocument = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>${leafletCss}html,body,#map{margin:0;width:100%;height:100%;}#message{position:absolute;bottom:28px;left:8px;right:8px;z-index:1000;background:white;font:13px sans-serif;padding:8px;display:none;}#center{position:absolute;top:10px;right:10px;z-index:1000;background:white;border:1px solid #aaa;padding:10px;border-radius:4px;}</style></head>
 <body><div id="map"></div><button id="center" aria-label="Centrar mi ubicacion">Centrar</button><div id="message" role="status"></div>
@@ -24,7 +24,8 @@ window.updateRoute=function(data){
   const current=data.location||(data.points||[]).slice(-1)[0];
   if(current){lastLocation=[current.latitude,current.longitude];L.circleMarker(lastLocation,{radius:7,color:'#2675ef'}).addTo(layer);
     if(current.accuracy>0)L.circle(lastLocation,{radius:current.accuracy,weight:1,color:'#2675ef',fillOpacity:0.08}).addTo(layer);
-    if(following)map.setView(lastLocation,current.accuracy>1000?12:16);}
+    if(following && !data.overview)map.setView(lastLocation,current.accuracy>1000?12:16);}
+  if(data.overview && following && data.points.length)map.fitBounds(data.points.map(p=>[p.latitude,p.longitude]),{padding:[25,25],maxZoom:16});
   map.invalidateSize();
 };
 window.addEventListener('message',event=>{if(event.source===parent&&event.data&&event.data.type==='route')window.updateRoute(event.data.data);});

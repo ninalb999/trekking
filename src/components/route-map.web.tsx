@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { mapDocument, type MapData } from '../lib/map-document';
 export default function RouteMap(data: MapData) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const latest = useRef(data); latest.current = data;
+  const latest = useRef(data);
+  useEffect(() => { latest.current = data; }, [data]);
   const send = () => frame.current?.contentWindow?.postMessage({ type: 'route', data: latest.current }, '*');
   useEffect(() => {
     const ready = (event: MessageEvent) => { if (event.source === frame.current?.contentWindow && event.data === 'map-ready') send(); };

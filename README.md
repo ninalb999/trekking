@@ -1,5 +1,12 @@
 # Welcome to your Expo app 👋
 
+## Trekking Bolivia — Supabase V1
+
+El esquema, RLS, Storage y la integración mínima están documentados en
+[docs/supabase_database.md](docs/supabase_database.md).
+Consulta los resultados y pendientes de despliegue en
+[docs/supabase_validation.md](docs/supabase_validation.md).
+
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
 ## Get started

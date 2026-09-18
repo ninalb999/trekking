@@ -1,0 +1,13 @@
+{
+  "name": "trekking-database-validation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node run.mjs",
+    "types": "node run.mjs --generate-types"
+  },
+  "devDependencies": {
+    "@supabase/postgrest-typegen": "0.2.2",
+    "embedded-postgres": "17.10.0-beta.17"
+  }
+}

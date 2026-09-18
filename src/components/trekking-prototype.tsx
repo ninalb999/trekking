@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -11,24 +13,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRecording } from '../hooks/use-recording';
 import { formatElapsed } from '../lib/recording';
 import RouteMap from './route-map';
-import { useSession } from '../hooks/use-session';
-import { AuthForm } from './auth-form';
+import { pickRouteImage, type RouteImageSelection } from '../lib/route-images';
+import { RouteDetailMap } from './route-detail-map';
 import { PointForm, FinishForm, SavedRoutes, SavedRouteDetail } from './route-workflow';
 import type { RouteData } from '../lib/route-data';
 import { useKeepAwake } from 'expo-keep-awake';
 
-type ScreenId = 'home' | 'login' | 'register' | 'routes' | 'record' | 'point' | 'finish' | 'detail';
+import { getSession, signInWithPassword, signOut, signUp } from '@/lib/auth';
+import { screenAfterAuthEvent, type AuthScreen } from '@/lib/auth-events';
+import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 
-const SCREENS: { id: ScreenId; title: string; subtitle: string }[] = [
-  { id: 'home', title: 'Explorar rutas', subtitle: 'Inicio' },
-  { id: 'login', title: 'Iniciar sesion', subtitle: 'Acceso' },
-  { id: 'register', title: 'Crear cuenta', subtitle: 'Registro' },
-  { id: 'routes', title: 'Mis rutas', subtitle: 'Listado' },
-  { id: 'record', title: 'Grabando ruta', subtitle: 'GPS activo' },
-  { id: 'point', title: 'Agregar punto', subtitle: 'Parada' },
-  { id: 'finish', title: 'Finalizar ruta', subtitle: 'Guardar' },
-  { id: 'detail', title: 'Detalle ruta', subtitle: 'Ficha' },
-];
+type ScreenId = AuthScreen;
 
 const ROUTES = [
   ['Laguna Escondida', 'Andes Explorer', '12.4 km', '5 h 30 min', 'Novato', 'green'],
@@ -39,11 +34,15 @@ const ROUTES = [
 ];
 
 export function TrekkingPrototype() {
-  const session = useSession();
-  const recording = useRecording(session?.user.id ?? null);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const recording = useRecording(ownerId);
+  const pauseRecording = useRef(recording.pause);
+  useEffect(() => { pauseRecording.current = recording.pause; });
   const [selectedRoute, setSelectedRoute] = useState<RouteData | null>(null);
   const [screen, setCurrentScreen] = useState<ScreenId>('login');
   const [activeTab, setActiveTab] = useState('Inicio');
+  const [authenticated, setAuthenticated] = useState(false);
+  const [sessionFeedback, setSessionFeedback] = useState('');
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const phoneWidth = Math.min(width, 430);
@@ -57,6 +56,52 @@ export function TrekkingPrototype() {
     setCurrentScreen(next);
   };
 
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let active = true;
+    let receivedAuthEvent = false;
+    const applyAuthEvent = (event: string, hasSession: boolean) => {
+      if (!active) return;
+      setAuthenticated(hasSession);
+      setCurrentScreen(current => {
+        const next = screenAfterAuthEvent(event, hasSession, current);
+        if (next === 'home' && next !== current) setActiveTab('Inicio');
+        if (next === 'login' && next !== current) {
+          pauseRecording.current();
+          setActiveTab('Inicio');
+        }
+        return next;
+      });
+    };
+    const { data: subscription } = getSupabase().auth.onAuthStateChange((event, session) => {
+      receivedAuthEvent = true;
+      setOwnerId(session?.user.id ?? null);
+      applyAuthEvent(event, Boolean(session));
+    });
+    getSession().then(({ data }) => {
+      if (!receivedAuthEvent) { setOwnerId(data.session?.user.id ?? null); applyAuthEvent('INITIAL_SESSION', Boolean(data.session)); }
+    }).catch(() => {
+      if (active && !receivedAuthEvent) {
+        setAuthenticated(false);
+        setSessionFeedback('No se pudo restaurar la sesión. Revisa tu conexión e inténtalo de nuevo.');
+      }
+    });
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
+
+  const logOut = async () => {
+    setSessionFeedback('');
+    const { error } = await signOut();
+    if (error) {
+      setSessionFeedback('No se pudo cerrar la sesión. Inténtalo de nuevo.');
+      return;
+    }
+    setScreen('login');
+  };
+
   return (
     <View style={[styles.root, { height, maxHeight: height, alignItems: 'center' }]}>
       <View style={[styles.phone, { width: phoneWidth, flex: 1, paddingTop: insets.top }]}>
@@ -67,10 +112,10 @@ export function TrekkingPrototype() {
           contentContainerStyle={{ paddingBottom: isAuth ? insets.bottom + 16 : 16 }}
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="never">
-        {screen === 'home' && <HomeScreen navigate={setScreen} />}
-        {screen === 'login' && <AuthForm register={false} navigate={setScreen} signedIn={!!session} />}
-        {screen === 'register' && <AuthForm register navigate={setScreen} signedIn={!!session} />}
-        {screen === 'routes' && <SavedRoutes ownerId={session?.user.id ?? null} message={recording.saveStatus} create={() => setScreen('record')} open={route => {
+        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} sessionFeedback={sessionFeedback} />}
+        {screen === 'login' && <LoginScreen navigate={setScreen} />}
+        {screen === 'register' && <RegisterScreen navigate={setScreen} />}
+        {screen === 'routes' && <SavedRoutes ownerId={ownerId} message={recording.saveStatus} create={() => setScreen('record')} open={route => {
           if (route.status !== 'finished' || !route.name) { recording.restore(route); setScreen(route.status === 'finished' ? 'finish' : 'record'); }
           else { setSelectedRoute(route); setScreen('detail'); }
         }} />}
@@ -126,12 +171,18 @@ function Hero({ title, subtitle, center }: { title: string; subtitle: string; ce
   );
 }
 
-function HomeScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback }: {
+  navigate: (screen: ScreenId) => void;
+  authenticated: boolean;
+  onSignOut: () => void;
+  sessionFeedback: string;
+}) {
   return (
     <>
       <Hero title="Rutas de Trekking" subtitle="Explora. Camina. Comparte." />
       <View style={styles.content}>
-        <SecondaryButton label="Iniciar sesion / Crear cuenta" onPress={() => navigate('login')} />
+        <SecondaryButton label={authenticated ? 'Cerrar sesión' : 'Iniciar sesión / Crear cuenta'} onPress={authenticated ? onSignOut : () => navigate('login')} />
+        {!!sessionFeedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{sessionFeedback}</Text>}
         <SearchBox text="Buscar rutas, lugares o creadores..." />
         <View style={styles.rowBetween}>
           <View style={styles.row}>
@@ -162,6 +213,38 @@ function HomeScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
 }
 
 function LoginScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState('');
+
+  const login = async () => {
+    if (loading) return;
+    setFeedback('');
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !password) {
+      setFeedback('Escribe tu correo y contraseña.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data, error } = await signInWithPassword(normalizedEmail, password);
+      if (error) {
+        setFeedback(error.code === 'invalid_credentials'
+          ? 'Correo o contraseña incorrectos.'
+          : error.code === 'email_not_confirmed'
+            ? 'Confirma tu correo antes de ingresar.'
+            : error.message);
+        return;
+      }
+      if (data.session) navigate('home');
+    } catch {
+      setFeedback('No se pudo iniciar sesión. Inténtalo de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       <Hero title="Rutas de Trekking" subtitle="Explora. Camina. Comparte." />
@@ -177,14 +260,16 @@ function LoginScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
         <Text selectable style={styles.authCopy}>
           Continua tu aventura y descubre nuevas rutas
         </Text>
-        <Field icon="M" text="Correo" />
-        <Field icon="L" text="Contrasena" trail="show" />
+        <Field icon="M" text="Correo" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+        <Field icon="L" text="Contraseña" value={password} onChangeText={setPassword} secure />
         <Text selectable style={styles.forgot}>
           Olvidaste tu contrasena?
         </Text>
-        <PrimaryButton label="Ingresar" suffix="→" onPress={() => navigate('home')} />
+        {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
+        <PrimaryButton label={loading ? 'Ingresando...' : 'Ingresar'} suffix="→" onPress={login} disabled={loading} />
         <Divider />
         <SecondaryButton label="No tienes cuenta? Registrate" onPress={() => navigate('register')} />
+        <SecondaryButton label="Continuar sin cuenta" onPress={() => navigate('home')} />
       </View>
       <View style={styles.features}>
         <MiniFeature icon="↟" label="Descubre nuevos lugares" />
@@ -196,6 +281,57 @@ function LoginScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
 }
 
 function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState('');
+
+  const register = async () => {
+    if (loading) return;
+    setFeedback('');
+    const fullName = name.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (fullName.length < 2) {
+      setFeedback('Escribe tu nombre completo.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setFeedback('Escribe un correo electrónico válido.');
+      return;
+    }
+    if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      setFeedback('La contraseña debe tener al menos 8 caracteres, letras y números.');
+      return;
+    }
+    if (password !== confirmation) {
+      setFeedback('Las contraseñas no coinciden.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await signUp(normalizedEmail, password, fullName, phone.trim());
+      if (error) {
+        setFeedback(error.code === 'user_already_exists' || /already registered/i.test(error.message)
+          ? 'Ya existe una cuenta con ese correo.'
+          : error.message);
+        return;
+      }
+      if (data.session) {
+        navigate('home');
+      } else {
+        setFeedback('Si el registro fue aceptado, revisa tu correo para confirmar la cuenta.');
+      }
+    } catch {
+      setFeedback('No se pudo completar el registro. Inténtalo de nuevo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       <Hero title="Crear cuenta" subtitle="Unete a nuestra comunidad y comienza a explorar." />
@@ -220,15 +356,16 @@ function RegisterScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
             </Text>
           </View>
         </View>
-        <Field icon="P" text="Nombre completo" />
-        <Field icon="T" text="Telefono" />
-        <Field icon="M" text="Correo electronico" />
-        <Field icon="L" text="Contrasena" trail="hide" />
+        <Field icon="P" text="Nombre completo" value={name} onChangeText={setName} autoCapitalize="words" />
+        <Field icon="T" text="Teléfono (opcional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+        <Field icon="M" text="Correo electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+        <Field icon="L" text="Contraseña" value={password} onChangeText={setPassword} secure />
         <Text selectable style={styles.helpText}>
           Minimo 8 caracteres, con letras y numeros.
         </Text>
-        <Field icon="L" text="Confirmar contrasena" trail="hide" />
-        <PrimaryButton label="Registrarme" onPress={() => navigate('home')} />
+        <Field icon="L" text="Confirmar contraseña" value={confirmation} onChangeText={setConfirmation} secure />
+        {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
+        <PrimaryButton label={loading ? 'Registrando...' : 'Registrarme'} onPress={register} disabled={loading} />
         <Text selectable onPress={() => navigate('login')} style={styles.centerLink}>
           Ya tienes una cuenta? <Text style={styles.linkStrong}>Iniciar sesion</Text>
         </Text>
@@ -290,7 +427,11 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
         {(active || track.status === 'paused') && <>
         <View style={styles.actions}>
           <SecondaryButton label="Agregar punto" icon="P" flex onPress={() => navigate('point')} />
-          <DangerButton label="Finalizar" onPress={() => { finish(); navigate('finish'); }} />
+          <DangerButton
+            label={busy ? 'Finalizando...' : 'Finalizar'}
+            disabled={busy}
+            onPress={() => void finish().then(finished => { if (finished) navigate('finish'); })}
+          />
         </View>
         </>}
         <View style={styles.note}>
@@ -383,6 +524,27 @@ function PointScreen({ navigate, elapsed }: { navigate: (screen: ScreenId) => vo
 }
 
 function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) => void; recording: ReturnType<typeof useRecording> }) {
+  const [routeImage, setRouteImage] = useState<RouteImageSelection | null>(null);
+  const [imageFeedback, setImageFeedback] = useState('');
+  const [pickingImage, setPickingImage] = useState(false);
+
+  const chooseImage = async () => {
+    if (pickingImage) return;
+    setImageFeedback('');
+    setPickingImage(true);
+    try {
+      const selection = await pickRouteImage();
+      if (selection) {
+        setRouteImage(selection);
+        setImageFeedback('Foto seleccionada. Se subirá cuando la ruta se guarde.');
+      }
+    } catch (error) {
+      setImageFeedback(error instanceof Error ? error.message : 'No se pudo seleccionar la fotografía.');
+    } finally {
+      setPickingImage(false);
+    }
+  };
+
   return (
     <>
       <Hero title="Finalizar ruta" subtitle="Revisa los detalles y guarda tu ruta." />
@@ -405,20 +567,22 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
           <SmallMetric value={formatElapsed(recording.elapsed)} label="Tiempo activo" />
           <SmallMetric value={String(recording.track.points.length)} label="Coordenadas" />
         </View>
+        {!!recording.error && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{recording.error}</Text>}
         <Text selectable style={styles.sectionTitle}>
           Foto principal
         </Text>
         <View style={styles.photoRow}>
-          <Photo wide />
-          <View style={styles.upload}>
+          {routeImage ? <Image source={{ uri: routeImage.uri }} style={[styles.photo, styles.photoWide]} resizeMode="cover" /> : <Photo wide />}
+          <Pressable accessibilityRole="button" disabled={pickingImage} onPress={chooseImage} style={({ pressed }) => [styles.upload, pickingImage && styles.disabled, pressed && styles.pressed]}>
             <Text selectable style={styles.uploadPlus}>
               +
             </Text>
             <Text selectable style={styles.formCopy}>
-              Subir foto
+              {pickingImage ? 'Abriendo...' : routeImage ? 'Cambiar foto' : 'Subir foto'}
             </Text>
-          </View>
+          </Pressable>
         </View>
+        {!!imageFeedback && <Text selectable accessibilityLiveRegion="polite" style={styles.formCopy}>{imageFeedback}</Text>}
         <Text selectable style={styles.sectionTitle}>
           Nombre de la ruta
         </Text>
@@ -452,7 +616,7 @@ function FinishScreen({ navigate, recording }: { navigate: (screen: ScreenId) =>
   );
 }
 
-function DetailScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
+function DetailScreen({ navigate, routeId }: { navigate: (screen: ScreenId) => void; routeId?: string }) {
   return (
     <View style={styles.detailContent}>
       <View style={styles.detailBar}>
@@ -486,7 +650,9 @@ function DetailScreen({ navigate }: { navigate: (screen: ScreenId) => void }) {
         <SecondaryButton label="Guardar" icon="B" flex />
       </View>
       <Panel title="Mapa de la ruta">
-        <MapCard small />
+        {routeId
+          ? <RouteDetailMap routeId={routeId} />
+          : <Text selectable style={styles.formCopy}>Selecciona una ruta guardada para cargar su recorrido real.</Text>}
       </Panel>
       <Panel title="Equipo indispensable">
         <ChipCloud items={['Mochila', 'Botas de trekking', 'Agua (2L+)', 'Ropa termica', 'Impermeable', 'Bastones']} />
@@ -539,7 +705,17 @@ function SearchBox({ text }: { text: string }) {
   );
 }
 
-function Field({ icon, text, trail }: { icon?: string; text: string; trail?: string }) {
+function Field({ icon, text, trail, value, onChangeText, keyboardType, autoCapitalize, secure }: {
+  icon?: string;
+  text: string;
+  trail?: string;
+  value?: string;
+  onChangeText?: (value: string) => void;
+  keyboardType?: 'default' | 'email-address' | 'phone-pad';
+  autoCapitalize?: 'none' | 'sentences' | 'words';
+  secure?: boolean;
+}) {
+  const [visible, setVisible] = useState(false);
   return (
     <View style={styles.field}>
       {icon && (
@@ -547,10 +723,26 @@ function Field({ icon, text, trail }: { icon?: string; text: string; trail?: str
           {icon}
         </Text>
       )}
-      <Text selectable style={styles.fieldText}>
-        {text}
-      </Text>
-      {trail && (
+      {onChangeText ? (
+        <TextInput
+          accessibilityLabel={text}
+          autoCapitalize={autoCapitalize ?? 'none'}
+          keyboardType={keyboardType ?? 'default'}
+          onChangeText={onChangeText}
+          placeholder={text}
+          placeholderTextColor="#7d8683"
+          secureTextEntry={secure && !visible}
+          style={styles.fieldInput}
+          value={value ?? ''}
+        />
+      ) : (
+        <Text selectable style={styles.fieldText}>{text}</Text>
+      )}
+      {secure ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'} onPress={() => setVisible(!visible)}>
+          <Text selectable style={styles.fieldTrail}>{visible ? 'Ocultar' : 'Mostrar'}</Text>
+        </Pressable>
+      ) : trail && (
         <Text selectable style={styles.fieldTrail}>
           {trail}
         </Text>
@@ -657,44 +849,23 @@ function Photo({ seed = 0, wide, tall, hero }: { seed?: number; wide?: boolean; 
   );
 }
 
-function MapCard({ recording, small }: { recording?: boolean; small?: boolean }) {
-  return (
-    <View style={[styles.map, small && styles.mapSmall]}>
-      <View style={styles.mapGrid} />
-      <View style={[styles.path, styles.pathOne]} />
-      <View style={[styles.path, styles.pathTwo]} />
-      <View style={[styles.path, styles.pathThree]} />
-      <View style={[styles.mapPin, styles.mapStart]} />
-      <View style={[styles.mapPin, styles.mapEnd]} />
-      {recording && (
-        <View style={styles.location}>
-          <Text selectable style={styles.locationText}>
-            Tu ubicacion
-          </Text>
-        </View>
-      )}
-      <Text selectable style={styles.scale}>
-        0     500 m     1 km
-      </Text>
-    </View>
-  );
-}
-
 function PrimaryButton({
   label,
   icon,
   suffix,
   flex,
   onPress,
+  disabled,
 }: {
   label: string;
   icon?: string;
   suffix?: string;
   flex?: boolean;
   onPress?: () => void;
+  disabled?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.primary, flex && styles.flex, pressed && styles.pressed]}>
+    <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.primary, flex && styles.flex, disabled && styles.disabled, pressed && styles.pressed]}>
       {icon && (
         <Text selectable style={styles.primaryIcon}>
           {icon}
@@ -714,7 +885,7 @@ function PrimaryButton({
 
 function SecondaryButton({ label, icon, flex, onPress }: { label: string; icon?: string; flex?: boolean; onPress?: () => void }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.secondary, flex && styles.flex, pressed && styles.pressed]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.secondary, flex && styles.flex, pressed && styles.pressed]}>
       {icon && (
         <Text selectable style={styles.secondaryIcon}>
           {icon}
@@ -727,9 +898,9 @@ function SecondaryButton({ label, icon, flex, onPress }: { label: string; icon?:
   );
 }
 
-function DangerButton({ label, onPress }: { label: string; onPress?: () => void }) {
+function DangerButton({ label, onPress, disabled }: { label: string; onPress?: () => void; disabled?: boolean }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.danger, pressed && styles.pressed]}>
+    <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.danger, disabled && styles.disabled, pressed && styles.pressed]}>
       <View style={styles.stop} />
       <Text selectable style={styles.dangerText}>
         {label}
@@ -1064,6 +1235,9 @@ const styles = StyleSheet.create({
   authTitle: { color: '#073d2d', fontSize: 29, fontWeight: '900', textAlign: 'center', letterSpacing: 0 },
   authCopy: { color: '#717a7a', fontSize: 16, lineHeight: 22, textAlign: 'center' },
   field: { minHeight: 56, borderRadius: 14, borderWidth: 1, borderColor: '#d1d8d6', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, backgroundColor: '#fff' },
+  fieldInput: { flex: 1, minWidth: 0, color: '#17221d', fontSize: 16, paddingVertical: 12 },
+  formFeedback: { color: '#9b1d1e', fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  disabled: { opacity: 0.6 },
   fieldIcon: { color: '#39413f', fontSize: 17, fontWeight: '900', width: 20, textAlign: 'center' },
   fieldText: { color: '#9299a2', fontSize: 16, flex: 1 },
   fieldTrail: { color: '#1b3327', fontSize: 11, fontWeight: '800' },

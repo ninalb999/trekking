@@ -26,7 +26,20 @@ export class Recording {
     this.lastReadingAt = 0;
     this.start(now);
   }
-  finish(now: number) { const pauses = this.pauseCount; this.pause(now); this.pauseCount = pauses; this.status = 'finished'; }
+  finish(now: number, finalPoint?: Omit<TrackPoint, 'segment'>, finalPointStartsNewSegment = this.status === 'paused') {
+    if (this.status === 'finished') return false;
+    const pauses = this.pauseCount;
+    this.pause(now);
+    this.pauseCount = pauses;
+    let accepted = false;
+    if (finalPoint) {
+      if (finalPointStartsNewSegment) { this.segment += 1; this.lastReadingAt = 0; }
+      this.status = 'recording';
+      accepted = this.add(finalPoint);
+    }
+    this.status = 'finished';
+    return accepted;
+  }
   add(point: Omit<TrackPoint, 'segment'>) {
     if (this.status !== 'recording' || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude) ||
       Math.abs(point.latitude) > 90 || Math.abs(point.longitude) > 180 ||
@@ -38,12 +51,9 @@ export class Recording {
     if (last && last.segment === this.segment) {
       const meters = getDistance(last, point);
       const seconds = (point.timestamp - last.timestamp) / 1000;
-      if (seconds > 30) this.segment += 1;
-      else {
-        const noiseFloor = Math.max(5, Math.min(last.accuracy ?? 150, point.accuracy) / 2);
-        if (meters < noiseFloor || meters / seconds > 8.34) return false;
-        this.distance += meters;
-      }
+      const noiseFloor = Math.max(5, Math.min(last.accuracy ?? 150, point.accuracy) / 2);
+      if (meters < noiseFloor || meters / seconds > 8.34) return false;
+      this.distance += meters;
     }
     this.points.push({ ...point, segment: this.segment });
     return true;

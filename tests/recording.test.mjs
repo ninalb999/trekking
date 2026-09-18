@@ -61,3 +61,28 @@ test('finish is idempotent and ignores further locations', () => {
   assert.equal(track.add(point(0.001, 31000)), false);
   assert.equal(formatElapsed(3661000), '01:01:01');
 });
+
+test('fresh final position is included without adding time or a pause', () => {
+  const track = new Recording(); track.start(1000); track.add(point(0, 1000));
+  assert.equal(track.finish(11000, point(0.0005, 11000)), true);
+  assert.ok(track.distance >= 55 && track.distance <= 56);
+  assert.equal(track.elapsed(30000), 10000);
+  assert.equal(track.pauseCount, 0);
+  assert.equal(track.finish(30000, point(0.001, 30000)), false);
+});
+
+test('finish from pause does not bridge movement or extend duration', () => {
+  const track = new Recording(); track.start(1000); track.add(point(0, 1000));
+  track.pause(11000);
+  assert.equal(track.finish(31000, point(1, 31000)), true);
+  assert.equal(track.elapsed(50000), 10000);
+  assert.equal(track.distance, 0);
+  assert.equal(track.points.at(-1).segment, 1);
+});
+
+test('unreliable endpoint retains the last valid point', () => {
+  const track = new Recording(); track.start(1000); track.add(point(0, 1000));
+  assert.equal(track.finish(11000, point(0.0005, 11000, 200)), false);
+  assert.equal(track.points.length, 1);
+  assert.equal(track.status, 'finished');
+});
