@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { randomUUID } from 'expo-crypto';
 import { Recording, type TrackPoint } from '../lib/recording';
@@ -8,7 +8,7 @@ import { syncRoute } from '../lib/cloud-routes';
 import { emptyRoute, validateRoute, type Place, type RouteData } from '../lib/route-data';
 
 async function finalPosition(): Promise<Omit<TrackPoint, 'segment'>> {
-  const read = process.env.EXPO_OS === 'web'
+  const read = Platform.OS === 'web'
     ? new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }))
     : Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -86,7 +86,7 @@ export function useRecording(ownerId: string | null) {
     busyRef.current = true; setBusy(true); setError(''); stop();
     const token = generation.current;
     try {
-      if (process.env.EXPO_OS !== 'web') {
+      if (Platform.OS !== 'web') {
         const permission = await Location.requestForegroundPermissionsAsync();
         if (!permission.granted) throw new Error('Permite la ubicacion precisa en Ajustes para grabar.');
         if (!await Location.hasServicesEnabledAsync()) throw new Error('Activa la ubicacion GPS del celular.');
@@ -105,16 +105,25 @@ export function useRecording(ownerId: string | null) {
         const next = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp };
         setLocation(next); engine.current.add(next); setError(''); update();
       };
-      const failed = (message: string) => { if (token === generation.current) { pause(); setError(message); } };
-      if (process.env.EXPO_OS === 'web') {
+      const failed = (cause: unknown) => {
+        if (token !== generation.current) return;
+        const message = cause && typeof cause === 'object' && 'message' in cause
+          ? String((cause as { message?: unknown }).message)
+          : typeof cause === 'string' ? cause : 'No se pudo recibir la ubicacion del dispositivo.';
+        pause(); setError(message);
+      };
+      if (Platform.OS === 'web') {
         const id = navigator.geolocation.watchPosition(add, err => {
           if (err.code === 1) failed('Acceso bloqueado. Permite Ubicacion en los ajustes del sitio.');
           else if (token === generation.current) setError('Buscando senal GPS. Se conserva el recorrido.');
         }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
         watcher.current = () => navigator.geolocation.clearWatch(id);
       } else {
-        const subscription = await Location.watchPositionAsync({ accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 0, timeInterval: 1000, mayShowUserSettingsDialog: true }, add, failed);
+        const subscription = await Location.watchPositionAsync({ accuracy: Location.Accuracy.High, distanceInterval: 0, timeInterval: 1000, mayShowUserSettingsDialog: true }, add, failed);
         if (token !== generation.current) subscription.remove(); else watcher.current = () => subscription.remove();
+        void Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High, mayShowUserSettingsDialog: true })
+          .then(position => { if (token === generation.current) add(position); })
+          .catch(() => { if (token === generation.current && !engine.current.points.length) setError('Buscando senal GPS. Mueve el telefono a un lugar abierto.'); });
       }
       autosave(true);
     } catch (cause) {
