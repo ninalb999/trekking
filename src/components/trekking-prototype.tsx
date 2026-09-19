@@ -63,17 +63,25 @@ export function TrekkingPrototype() {
   const { width, height } = useWindowDimensions();
   const phoneWidth = Math.min(width, 430);
   const isAuth = screen === 'login' || screen === 'register';
+  const showNotice = (message: string) => {
+    setNotice(message);
+    setTimeout(() => setNotice(current => current === message ? '' : current), 3800);
+  };
   const setScreen = (next: ScreenId) => {
+    const protectedScreen = next === 'routes' || next === 'record' || next === 'point' || next === 'finish' || next === 'detail';
+    if (protectedScreen && !authenticated) {
+      showNotice(next === 'routes' || next === 'detail'
+        ? 'Inicia sesión para consultar tus rutas.'
+        : 'Inicia sesión para grabar y crear rutas.');
+      setCurrentScreen('login');
+      return;
+    }
     if (screen === 'point' && next === 'record' && recording.track.status === 'paused') void recording.begin();
     if (next !== 'record' && (recording.track.status === 'recording' || recording.busy)) recording.pause();
     if (next === 'home') setActiveTab('Inicio');
     if (next === 'routes') setActiveTab('Mis rutas');
     if (next === 'record' || next === 'point' || next === 'finish') setActiveTab('Grabar');
     setCurrentScreen(next);
-  };
-  const showNotice = (message: string) => {
-    setNotice(message);
-    setTimeout(() => setNotice(current => current === message ? '' : current), 3800);
   };
 
   useEffect(() => {
@@ -1013,8 +1021,10 @@ function BottomTabs({ active, authenticated, navigate, onNotice }: { active: str
           accessibilityLabel={item}
           accessibilityState={{ selected: active === item }}
           onPress={() => {
-            if (item === 'Grabar' && !authenticated) {
-              onNotice('Inicia sesión para grabar una ruta.');
+            if ((item === 'Grabar' || item === 'Mis rutas') && !authenticated) {
+              onNotice(item === 'Mis rutas'
+                ? 'Inicia sesión para consultar tus rutas.'
+                : 'Inicia sesión para grabar y crear rutas.');
               navigate('login');
               return;
             }

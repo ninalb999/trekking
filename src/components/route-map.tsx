@@ -9,8 +9,8 @@ export default function RouteMap(data: MapData) {
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => { if (ready) webview.current?.injectJavaScript(`window.updateRoute(${JSON.stringify(data)});true;`); }, [data, ready]);
-  return <View pointerEvents={data.overview ? 'none' : 'auto'} style={{ height: 342, width: '100%', overflow: 'hidden' }}>
-    <WebView key={attempt} ref={webview} source={source} originWhitelist={['*']} javaScriptEnabled scrollEnabled={false}
+  return <View style={{ height: 342, width: '100%', overflow: 'hidden' }}>
+    <WebView key={attempt} ref={webview} source={source} originWhitelist={['*']} javaScriptEnabled nestedScrollEnabled
       style={{ flex: 1, backgroundColor: '#e8f0e5' }}
       onMessage={event => { if (event.nativeEvent.data === 'ready') { setReady(true); setError(false); } }}
       onError={() => setError(true)} onContentProcessDidTerminate={() => setError(true)} />

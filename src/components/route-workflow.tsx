@@ -85,34 +85,18 @@ export function FinishForm({ recording, done }: { recording: Recorder; done: () 
 
 export function SavedRoutes({ ownerId, open, create, message }: { ownerId: string | null; open: (route: RouteData) => void; create: () => void; message: string }) {
   const [routes, setRoutes] = useState<RouteData[]>([]), [filter, setFilter] = useState('Todas'), [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const mounted = useRef(true);
-  async function refresh() {
-    if (busy) return; setBusy(true); setError('');
-    try {
-      const local = await loadLocalRoutes(ownerId);
-      if (mounted.current) setRoutes(local);
-      if (!ownerId) return;
-      const updated = await refreshRoutes(ownerId);
-      if (mounted.current) setRoutes(updated);
-    }
-    catch { if (mounted.current) setError('Mostrando copia local. No se pudo sincronizar; puedes reintentar.'); }
-    finally { if (mounted.current) setBusy(false); }
-  }
   useEffect(() => {
-    mounted.current = true;
     let alive = true;
     loadLocalRoutes(ownerId).then(local => { if (alive) setRoutes(local); })
       .then(() => refreshRoutes(ownerId)).then(updated => { if (alive) setRoutes(updated); })
       .catch(() => { if (alive) setError('Mostrando copia local. Sincronizacion pendiente.'); });
-    return () => { alive = false; mounted.current = false; };
+    return () => { alive = false; };
   }, [ownerId]);
   return <View style={ui.content}>
     <Text style={ui.title}>Mis rutas</Text>{!!message && <Text accessibilityLiveRegion="polite" style={ui.muted}>{message}</Text>}
     <Choices values={['Todas', 'Publicas', 'Privadas']} selected={[filter]} onSelect={setFilter} />
     {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
-    <Action label={busy ? 'Sincronizando...' : ownerId ? 'Sincronizar con Supabase' : 'Actualizar copia local'} disabled={busy} onPress={() => void refresh()} />
-    {!ownerId && <Text style={ui.muted}>Inicia sesion para sincronizar tus rutas entre dispositivos.</Text>}
+    <Text style={ui.muted}>{ownerId ? 'La sincronización con Supabase se realiza automáticamente.' : 'Inicia sesion para sincronizar tus rutas entre dispositivos.'}</Text>
     {routes.filter(route => filter === 'Todas' || route.visibility === (filter === 'Publicas' ? 'public' : 'private')).map(route => {
       const pending = route.syncedAt !== route.updatedAt;
       return (
@@ -133,6 +117,6 @@ export function SavedRouteDetail({ route, back }: { route: RouteData; back: () =
     <RouteMap points={route.points} places={route.places} overview /><Text>{route.description}</Text>
     <Text style={ui.label}>Equipo</Text><Text>{route.equipment.join(', ') || 'Sin equipo indicado'}</Text>
     <Text style={ui.label}>Puntos del recorrido</Text>
-    {route.places.map(place => <View key={place.id} style={{ gap: 6 }}><Text style={ui.label}>{place.name}</Text><Text>{place.description}</Text><Text>{place.type} · {place.services.join(', ')}</Text><Text>{place.latitude.toFixed(6)}, {place.longitude.toFixed(6)}</Text></View>)}
+    {route.places.map(place => <View key={place.id} style={{ gap: 6 }}>{place.photo && <Image source={place.photo} style={{ width: '100%', height: 140, borderRadius: 18 }} contentFit="cover" />}<Text style={ui.label}>{place.name}</Text><Text>{place.description}</Text><Text>{place.type} · {place.services.join(', ')}</Text><Text>{place.latitude.toFixed(6)}, {place.longitude.toFixed(6)}</Text></View>)}
   </View>;
 }

@@ -12,6 +12,7 @@ L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{subdomains:'abc'
 .on('tileerror',()=>{message.textContent='Mapa sin conexion. El GPS puede seguir grabando.';message.style.display='block';})
 .on('tileload',()=>message.style.display='none').addTo(map);
 map.on('dragstart',()=>following=false);
+map.on('zoomstart',()=>following=false);
 document.getElementById('center').onclick=()=>{following=true;if(lastLocation)map.setView(lastLocation,16);};
 function clean(value){return String(value||'').replace(/[<>&"]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));}
 function placeType(value){return ({campamento:'Campamento',descanso:'Descanso',agua:'Agua',tienda:'Tienda',otro:'Otro'}[value]||value||'Punto');}
@@ -33,7 +34,7 @@ window.updateRoute=function(data){
   for(const coordinates of segments.values())L.polyline(coordinates,{color:'#1f6a43',weight:5}).addTo(layer);
   const first=data.points&&data.points[0];
   if(first)L.circleMarker([first.latitude,first.longitude],{radius:7,color:'#1f6a43'}).bindTooltip('Inicio').addTo(layer);
-  for(const p of data.places||[]){const label=document.createElement('span');label.textContent=p.name;L.circleMarker([p.latitude,p.longitude],{radius:8,color:'#ad6419',fillColor:'#fff3df',fillOpacity:.9,weight:3}).bindTooltip(label).bindPopup(popupFor(p)).addTo(layer);}
+  for(const p of data.places||[]){const label=document.createElement('span');label.textContent=p.name;const marker=L.circleMarker([p.latitude,p.longitude],{radius:8,color:'#ad6419',fillColor:'#fff3df',fillOpacity:.9,weight:3}).bindTooltip(label).bindPopup(popupFor(p),{autoPan:true,maxWidth:260});marker.on('click',()=>marker.openPopup());marker.addTo(layer);}
   const current=data.location||(data.points||[]).slice(-1)[0];
   if(current){lastLocation=[current.latitude,current.longitude];L.circleMarker(lastLocation,{radius:7,color:'#2675ef'}).addTo(layer);
     if(current.accuracy>0)L.circle(lastLocation,{radius:current.accuracy,weight:1,color:'#2675ef',fillOpacity:0.08}).addTo(layer);
