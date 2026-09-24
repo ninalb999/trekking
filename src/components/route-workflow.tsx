@@ -53,7 +53,7 @@ export function FinishForm({ recording, done }: { recording: Recorder; done: () 
   const [difficulty, setDifficulty] = useState(data.difficulty), [visibility, setVisibility] = useState(data.visibility);
   const [equipment, setEquipment] = useState(data.equipment), [photo, setPhoto] = useState(data.photo);
   const [photoType, setPhotoType] = useState(data.photoType);
-  const [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false), [saved, setSaved] = useState(false), [shareError, setShareError] = useState('');
   const saving = useRef(false);
   async function choosePhoto() {
     try {
@@ -63,9 +63,21 @@ export function FinishForm({ recording, done }: { recording: Recorder; done: () 
   }
   async function save() {
     if (saving.current) return; saving.current = true; setBusy(true); setError('');
-    try { await recording.save({ name: name.trim(), description: description.trim(), difficulty, visibility, equipment, photo, photoType, imagePath: photo !== data.photo ? undefined : data.imagePath }); done(); }
+    try { await recording.save({ name: name.trim(), description: description.trim(), difficulty, visibility, equipment, photo, photoType, imagePath: photo !== data.photo ? undefined : data.imagePath }); setSaved(true); }
     catch (e) { setError(e instanceof Error ? e.message : 'No se pudo guardar.'); }
     finally { saving.current = false; setBusy(false); }
+  }
+  async function shareRoute() {
+    setShareError('');
+    try {
+      await Share.share({ message: [
+        `Ruta: ${name.trim() || 'Ruta de Trekking'}`,
+        `Distancia: ${(data.distance / 1000).toFixed(2)} km`,
+        `Duración: ${formatElapsed(data.elapsed)}`,
+        `Dificultad: ${difficulty}`,
+        ...(description.trim() ? [`Descripción: ${description.trim()}`] : []),
+      ].join('\\n') });
+    } catch { setShareError('No se pudo compartir la ruta. Inténtalo de nuevo.'); }
   }
   return <View style={ui.content}>
     <Text style={ui.title}>Guardar ruta</Text>
@@ -79,7 +91,14 @@ export function FinishForm({ recording, done }: { recording: Recorder; done: () 
     <Text style={ui.label}>Equipo indispensable</Text><Choices multiple values={['Agua', 'Botas', 'Mochila', 'Ropa termica', 'Bastones', 'Proteccion solar', 'Mapa/GPS']} selected={equipment} onSelect={value => setEquipment(toggle(equipment, value))} />
     <Text style={ui.label}>Visibilidad</Text><Choices values={['Privada', 'Publica']} selected={[visibility === 'private' ? 'Privada' : 'Publica']} onSelect={value => setVisibility(value === 'Privada' ? 'private' : 'public')} />
     {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
-    <Action label={busy ? 'Guardando ruta...' : 'Guardar ruta'} disabled={busy} onPress={() => void save()} />
+    {saved
+      ? <>
+          <Text accessibilityLiveRegion="polite" style={ui.muted}>Ruta guardada correctamente.</Text>
+          <Action label="Compartir ruta" onPress={() => void shareRoute()} />
+          {!!shareError && <Text accessibilityRole="alert" style={ui.error}>{shareError}</Text>}
+          <Action label="Continuar a Mis rutas" onPress={done} />
+        </>
+      : <Action label={busy ? 'Guardando ruta...' : 'Guardar ruta'} disabled={busy} onPress={() => void save()} />}
   </View>;
 }
 
