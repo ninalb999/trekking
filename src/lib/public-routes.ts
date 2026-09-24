@@ -2,6 +2,7 @@ import { getSupabase, isSupabaseConfigured } from './supabase';
 import type { Json } from '../types/database';
 import type { Place } from './route-data';
 import type { TrackPoint } from './recording';
+import { getRouteImageUrl } from './route-images';
 
 export type PublicRouteSummary = {
   id: string;
@@ -122,10 +123,15 @@ export async function getPublicRouteDetail(id: string): Promise<PublicRouteDetai
       longitude: Number(raw.longitude),
       accuracy: null,
       timestamp: Date.now() + index,
-      photo: typeof raw.photo === 'string' ? raw.photo : undefined,
+      photoPath: typeof raw.imagePath === 'string' ? raw.imagePath : undefined,
     };
   }).filter(place => Number.isFinite(place.latitude) && Number.isFinite(place.longitude)) : [];
-  return { ...summary, points, places };
+  const placesWithImages = await Promise.all(places.map(async place => {
+    if (!place.photoPath) return place;
+    try { return { ...place, photo: await getRouteImageUrl(place.photoPath) ?? undefined }; }
+    catch { return place; }
+  }));
+  return { ...summary, points, places: placesWithImages };
 }
 
 function filterFallback(search: string, difficulty: string) {
