@@ -5,7 +5,7 @@ import { pickRouteImage } from '../lib/route-images';
 import { useRecording } from '../hooks/use-recording';
 import { formatElapsed } from '../lib/recording';
 import type { RouteData } from '../lib/route-data';
-import { loadLocalRoutes } from '../lib/local-routes';
+import { loadLocalRoutes, loadOfflineRoutes, saveOfflineRoute, removeOfflineRoute } from '../lib/local-routes';
 import { refreshRoutes } from '../lib/cloud-routes';
 import { Action, Choices, Input, ui } from './route-controls';
 import RouteMap from './route-map';
@@ -87,8 +87,17 @@ export function SavedRoutes({ ownerId, open, create, message }: { ownerId: strin
   const [routes, setRoutes] = useState<RouteData[]>([]), [filter, setFilter] = useState('Todas'), [error, setError] = useState('');
   useEffect(() => {
     let alive = true;
-    loadLocalRoutes(ownerId).then(local => { if (alive) setRoutes(local); })
-      .then(() => refreshRoutes(ownerId)).then(updated => { if (alive) setRoutes(updated); })
+    let downloads: RouteData[] = [];
+    const merge = (primary: RouteData[], fallback: RouteData[]) => Array.from(new Map([...fallback, ...primary].map(route => [route.id, route])).values()).sort((a, b) => b.updatedAt - a.updatedAt);
+    loadOfflineRoutes(ownerId).catch(() => {
+      if (alive) setError('No se pudieron cargar las descargas.');
+      return [];
+    }).then(offline => {
+      downloads = offline;
+      if (alive) setRoutes(offline);
+      return loadLocalRoutes(ownerId);
+    }).then(local => { if (alive) setRoutes(merge(local, downloads)); })
+      .then(() => refreshRoutes(ownerId)).then(updated => { if (alive) setRoutes(merge(updated, downloads)); })
       .catch(() => { if (alive) setError('Mostrando copia local. Sincronizacion pendiente.'); });
     return () => { alive = false; };
   }, [ownerId]);
@@ -111,6 +120,27 @@ export function SavedRoutes({ ownerId, open, create, message }: { ownerId: strin
   </View>;
 }
 export function SavedRouteDetail({ route, back }: { route: RouteData; back: () => void }) {
+  const [downloaded, setDownloaded] = useState(false), [offlineBusy, setOfflineBusy] = useState(true), [offlineError, setOfflineError] = useState('');
+  const offlineOperation = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    setDownloaded(false); setOfflineBusy(true); setOfflineError('');
+    loadOfflineRoutes(route.ownerId)
+      .then(routes => { if (alive) setDownloaded(routes.some(item => item.id === route.id)); })
+      .catch(() => { if (alive) setOfflineError('No se pudo comprobar la descarga.'); })
+      .finally(() => { if (alive) setOfflineBusy(false); });
+    return () => { alive = false; };
+  }, [route.id, route.ownerId]);
+  async function toggleDownload() {
+    if (offlineOperation.current) return;
+    offlineOperation.current = true; setOfflineBusy(true); setOfflineError('');
+    try {
+      if (downloaded) await removeOfflineRoute(route.id);
+      else await saveOfflineRoute(route);
+      setDownloaded(!downloaded);
+    } catch { setOfflineError('No se pudo guardar o eliminar la descarga. Inténtalo de nuevo.'); }
+    finally { offlineOperation.current = false; setOfflineBusy(false); }
+  }
   const [shareError, setShareError] = useState('');
   async function shareRoute() {
     setShareError('');
@@ -127,6 +157,10 @@ export function SavedRouteDetail({ route, back }: { route: RouteData; back: () =
   return <View style={ui.content}><Action label="Volver a Mis rutas" onPress={back} /><Text style={ui.title}>{route.name}</Text>
     <Action label="Compartir ruta" onPress={() => void shareRoute()} />
     {!!shareError && <Text accessibilityRole="alert" style={ui.error}>{shareError}</Text>}
+    {downloaded && <Text accessibilityLiveRegion="polite" style={ui.muted}>Disponible offline</Text>}
+    <Action label={downloaded ? 'Eliminar descarga' : 'Descargar para usar offline'} disabled={offlineBusy} onPress={() => void toggleDownload()} />
+    <Text style={ui.muted}>La descarga incluye datos y trazado GPS. No incluye mapa base ni fotos.</Text>
+    {!!offlineError && <Text accessibilityRole="alert" style={ui.error}>{offlineError}</Text>}
     <Text>{(route.distance / 1000).toFixed(2)} km · {formatElapsed(route.elapsed)} · {route.difficulty}</Text>
     {route.photo && <Image source={route.photo} style={{ height: 180, width: '100%', borderRadius: 22 }} />}
     <RouteMap points={route.points} places={route.places} overview /><Text>{route.description}</Text>
