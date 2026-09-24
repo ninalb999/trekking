@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Text, View, Pressable } from 'react-native';
+import { Text, View, Pressable, Share } from 'react-native';
 import { Image } from 'expo-image';
 import { pickRouteImage } from '../lib/route-images';
 import { useRecording } from '../hooks/use-recording';
@@ -111,7 +111,22 @@ export function SavedRoutes({ ownerId, open, create, message }: { ownerId: strin
   </View>;
 }
 export function SavedRouteDetail({ route, back }: { route: RouteData; back: () => void }) {
+  const [shareError, setShareError] = useState('');
+  async function shareRoute() {
+    setShareError('');
+    try {
+      await Share.share({ message: [
+        `Ruta: ${route.name || 'Ruta de Trekking'}`,
+        `Distancia: ${(route.distance / 1000).toFixed(2)} km`,
+        `Duración: ${formatElapsed(route.elapsed)}`,
+        `Dificultad: ${route.difficulty}`,
+        ...(route.description.trim() ? [`Descripción: ${route.description}`] : []),
+      ].join('\n') });
+    } catch { setShareError('No se pudo compartir la ruta. Inténtalo de nuevo.'); }
+  }
   return <View style={ui.content}><Action label="Volver a Mis rutas" onPress={back} /><Text style={ui.title}>{route.name}</Text>
+    <Action label="Compartir ruta" onPress={() => void shareRoute()} />
+    {!!shareError && <Text accessibilityRole="alert" style={ui.error}>{shareError}</Text>}
     <Text>{(route.distance / 1000).toFixed(2)} km · {formatElapsed(route.elapsed)} · {route.difficulty}</Text>
     {route.photo && <Image source={route.photo} style={{ height: 180, width: '100%', borderRadius: 22 }} />}
     <RouteMap points={route.points} places={route.places} overview /><Text>{route.description}</Text>
