@@ -1,4 +1,5 @@
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
 
 import RouteMap from '@/components/route-map';
 import { RouteDetailMap } from '@/components/route-detail-map';
@@ -29,6 +30,19 @@ function RouteContent({ detail, imageUrl, imageError, onBack }: {
 }) {
   const hasTrack = detail.points.length > 0;
   const isPersistedRoute = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(detail.id);
+  const [shareError, setShareError] = useState('');
+  async function shareRoute() {
+    setShareError('');
+    try {
+      await Share.share({ message: [
+        `Ruta: ${detail.name}`,
+        `Distancia: ${formatDistance(detail.distanceMeters)}`,
+        `Duración: ${formatDuration(detail.durationSeconds)}`,
+        `Dificultad: ${detail.difficulty}`,
+        ...(detail.description.trim() ? [`Descripción: ${detail.description}`] : []),
+      ].join('\n') });
+    } catch { setShareError('No se pudo compartir la ruta. Inténtalo de nuevo.'); }
+  }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator>
@@ -43,6 +57,10 @@ function RouteContent({ detail, imageUrl, imageError, onBack }: {
         <Metric value={formatDuration(detail.durationSeconds)} label="Duración" />
         <Metric value={detail.difficulty} label="Dificultad" />
       </View>
+      <Pressable accessibilityRole="button" onPress={() => void shareRoute()} style={styles.shareButton}>
+        <Text style={styles.shareText}>Compartir ruta</Text>
+      </Pressable>
+      {!!shareError && <Text accessibilityRole="alert" style={styles.error}>{shareError}</Text>}
       <Panel title="Descripción"><Text selectable style={styles.description}>{detail.description || 'Sin descripción.'}</Text></Panel>
       <Panel title="Mapa de la ruta">
         {hasTrack ? <RouteMap points={detail.points} places={detail.places} overview /> : isPersistedRoute ? <RouteDetailMap routeId={detail.id} /> : <Text style={styles.description}>Esta ruta todavía no tiene coordenadas.</Text>}
@@ -90,5 +108,5 @@ function pointTypeLabel(type: string) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fbfbf7' }, content: { gap: 12, padding: 14, paddingBottom: 28, backgroundColor: '#fbfbf7' }, header: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 16 }, headerTitle: { flex: 1, color: '#0a2520', fontSize: 18, fontWeight: '900' }, backButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,0.12)' }, backText: { color: '#103929', fontSize: 28, fontWeight: '900' }, pressed: { opacity: 0.76 }, heroImage: { width: '100%', height: 190, borderRadius: 24 }, imagePlaceholder: { width: '100%', height: 190, borderRadius: 24, backgroundColor: '#dce8d7', alignItems: 'center', justifyContent: 'center' }, imagePlaceholderText: { color: '#456153', fontSize: 14, fontWeight: '700' }, identity: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 }, titleGroup: { flexGrow: 1, flexShrink: 1, flexBasis: 200 }, title: { color: '#030605', fontSize: 29, fontWeight: '900' }, author: { color: '#5e6864', fontSize: 13, fontWeight: '600', marginTop: 3 }, badge: { minHeight: 32, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 18, backgroundColor: '#dcefe4', justifyContent: 'center' }, badgeText: { color: '#155136', fontSize: 13, fontWeight: '900' }, summary: { padding: 14, borderRadius: 18, backgroundColor: '#fff', flexDirection: 'row', flexWrap: 'wrap', gap: 12 }, metric: { flexGrow: 1, flexBasis: 85, alignItems: 'center' }, metricValue: { color: '#07100b', fontSize: 18, fontWeight: '900', textAlign: 'center' }, metricLabel: { color: '#69736f', fontSize: 12, fontWeight: '700', textAlign: 'center', marginTop: 4 }, panel: { padding: 12, borderRadius: 16, backgroundColor: '#fff', gap: 10 }, statusCard: { padding: 16, borderRadius: 16, backgroundColor: '#fff', gap: 12 }, sectionTitle: { color: '#060807', fontSize: 20, fontWeight: '900' }, description: { color: '#4f5c58', fontSize: 15, lineHeight: 23 }, retryButton: { alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: '#155136' }, retryText: { color: '#fff', fontSize: 14, fontWeight: '800' }, equipmentList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, equipmentItem: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: '#e8f1eb', color: '#163d2d', fontSize: 12, fontWeight: '700' }, placeRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' }, pointDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#2f8a4c', marginTop: 6 }, placeImage: { width: '100%', height: 116, borderRadius: 18, marginBottom: 8 }, placeName: { color: '#101713', fontSize: 14, fontWeight: '900' }, placeType: { color: '#155136', fontSize: 12, fontWeight: '800', marginTop: 2 }, serviceList: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }, serviceItem: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: '#e8f1eb', color: '#163d2d', fontSize: 11, fontWeight: '700' },
+  screen: { flex: 1, backgroundColor: '#fbfbf7' }, content: { gap: 12, padding: 14, paddingBottom: 28, backgroundColor: '#fbfbf7' }, header: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 16 }, headerTitle: { flex: 1, color: '#0a2520', fontSize: 18, fontWeight: '900' }, backButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,0.12)' }, backText: { color: '#103929', fontSize: 28, fontWeight: '900' }, pressed: { opacity: 0.76 }, heroImage: { width: '100%', height: 190, borderRadius: 24 }, imagePlaceholder: { width: '100%', height: 190, borderRadius: 24, backgroundColor: '#dce8d7', alignItems: 'center', justifyContent: 'center' }, imagePlaceholderText: { color: '#456153', fontSize: 14, fontWeight: '700' }, identity: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 }, titleGroup: { flexGrow: 1, flexShrink: 1, flexBasis: 200 }, title: { color: '#030605', fontSize: 29, fontWeight: '900' }, author: { color: '#5e6864', fontSize: 13, fontWeight: '600', marginTop: 3 }, badge: { minHeight: 32, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 18, backgroundColor: '#dcefe4', justifyContent: 'center' }, badgeText: { color: '#155136', fontSize: 13, fontWeight: '900' }, summary: { padding: 14, borderRadius: 18, backgroundColor: '#fff', flexDirection: 'row', flexWrap: 'wrap', gap: 12 }, shareButton: { alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: '#155136' }, shareText: { color: '#fff', fontSize: 14, fontWeight: '800' }, error: { color: '#9b2c2c', fontSize: 13, fontWeight: '700' }, metric: { flexGrow: 1, flexBasis: 85, alignItems: 'center' }, metricValue: { color: '#07100b', fontSize: 18, fontWeight: '900', textAlign: 'center' }, metricLabel: { color: '#69736f', fontSize: 12, fontWeight: '700', textAlign: 'center', marginTop: 4 }, panel: { padding: 12, borderRadius: 16, backgroundColor: '#fff', gap: 10 }, statusCard: { padding: 16, borderRadius: 16, backgroundColor: '#fff', gap: 12 }, sectionTitle: { color: '#060807', fontSize: 20, fontWeight: '900' }, description: { color: '#4f5c58', fontSize: 15, lineHeight: 23 }, retryButton: { alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: '#155136' }, retryText: { color: '#fff', fontSize: 14, fontWeight: '800' }, equipmentList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, equipmentItem: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: '#e8f1eb', color: '#163d2d', fontSize: 12, fontWeight: '700' }, placeRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' }, pointDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#2f8a4c', marginTop: 6 }, placeImage: { width: '100%', height: 116, borderRadius: 18, marginBottom: 8 }, placeName: { color: '#101713', fontSize: 14, fontWeight: '900' }, placeType: { color: '#155136', fontSize: 12, fontWeight: '800', marginTop: 2 }, serviceList: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }, serviceItem: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: '#e8f1eb', color: '#163d2d', fontSize: 11, fontWeight: '700' },
 });
