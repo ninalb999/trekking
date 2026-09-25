@@ -43,6 +43,7 @@ import { getRouteMainImageUrl } from '@/lib/route-detail';
 import { loadOfflineRoutes, saveOfflineRoute } from '@/lib/local-routes';
 import { toSavedPublicRoute } from '@/lib/saved-public-routes';
 import { LoadingState, LoginWelcome, TrailSpinner } from './feedback/trekking-animations';
+import { getRouteShareLinkLabel, getRouteShareUrl } from '@/lib/route-sharing';
 
 type ScreenId = AuthScreen;
 
@@ -920,6 +921,7 @@ function RouteCard({ route, index, onPress, authenticated, ownerId, onRequireAut
 
   const shareRoute = async () => {
     try {
+      const routeUrl = getRouteShareUrl(route.id);
       await Share.share({
         message: [
           `Ruta: ${route.name}`,
@@ -928,6 +930,7 @@ function RouteCard({ route, index, onPress, authenticated, ownerId, onRequireAut
           `Duración: ${formatDuration(route.durationSeconds)}`,
           `Dificultad: ${route.difficulty}`,
           route.description.trim() ? `Descripción: ${route.description.trim()}` : '',
+          routeUrl ? `${getRouteShareLinkLabel(routeUrl)}: ${routeUrl}` : '',
         ].filter(Boolean).join('\n'),
       });
       setFeedback('Ruta lista para compartir.');

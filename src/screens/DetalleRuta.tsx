@@ -6,6 +6,7 @@ import { LoadingState } from '@/components/feedback/trekking-animations';
 import { RouteDetailMap } from '@/components/route-detail-map';
 import { useRouteDetail } from '@/hooks/use-route-detail';
 import { formatDistance, formatDuration, type PublicRouteDetail } from '@/lib/public-routes';
+import { getRouteShareLinkLabel, getRouteShareUrl } from '@/lib/route-sharing';
 
 type DetalleRutaProps = {
   routeId: string | null;
@@ -35,12 +36,14 @@ function RouteContent({ detail, imageUrl, imageError, onBack }: {
   async function shareRoute() {
     setShareError('');
     try {
+      const routeUrl = getRouteShareUrl(detail.id);
       await Share.share({ message: [
         `Ruta: ${detail.name}`,
         `Distancia: ${formatDistance(detail.distanceMeters)}`,
         `Duración: ${formatDuration(detail.durationSeconds)}`,
         `Dificultad: ${detail.difficulty}`,
         ...(detail.description.trim() ? [`Descripción: ${detail.description}`] : []),
+        ...(routeUrl ? [`${getRouteShareLinkLabel(routeUrl)}: ${routeUrl}`] : []),
       ].join('\n') });
     } catch { setShareError('No se pudo compartir la ruta. Inténtalo de nuevo.'); }
   }

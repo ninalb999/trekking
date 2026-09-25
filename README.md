@@ -13,9 +13,13 @@ Ejemplo:
 ```bash
 EXPO_PUBLIC_SUPABASE_URL=https://khhnfbwzxklzkegwfapd.supabase.co
 EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=tu_publishable_key
+# Opcional: dominio web público usado en los enlaces al compartir rutas
+EXPO_PUBLIC_APP_URL=https://tu-dominio-publico.example.com
 ```
 
 El archivo `.env.local` no se sube a GitHub.
+
+Si `EXPO_PUBLIC_APP_URL` está configurada, las rutas públicas se comparten con un enlace HTTPS como `https://tu-dominio-publico.example.com/rutas/<id>`. Si no está configurada, se utiliza el enlace profundo `trekkingapp://rutas/<id>`, que requiere una build instalada de la aplicación. Las rutas privadas se comparten sin enlace.
 
 ## Instalar Dependencias
 

@@ -10,6 +10,7 @@ import { refreshRoutes } from '../lib/cloud-routes';
 import { Action, Choices, Input, ui } from './route-controls';
 import RouteMap from './route-map';
 import { LoadingState } from './feedback/trekking-animations';
+import { getRouteShareLinkLabel, getRouteShareUrl } from '../lib/route-sharing';
 
 type Recorder = ReturnType<typeof useRecording>;
 const types: Record<string, string> = { Campamento: 'campamento', Descanso: 'descanso', Agua: 'agua', Tienda: 'tienda', Otro: 'otro' };
@@ -71,12 +72,14 @@ export function FinishForm({ recording, done }: { recording: Recorder; done: () 
   async function shareRoute() {
     setShareError('');
     try {
+      const routeUrl = getRouteShareUrl(data.id, visibility === 'public' ? 'public' : 'private');
       await Share.share({ message: [
         `Ruta: ${name.trim() || 'Ruta de Trekking'}`,
         `Distancia: ${(data.distance / 1000).toFixed(2)} km`,
         `Duración: ${formatElapsed(data.elapsed)}`,
         `Dificultad: ${difficulty}`,
         ...(description.trim() ? [`Descripción: ${description.trim()}`] : []),
+        ...(routeUrl ? [`${getRouteShareLinkLabel(routeUrl)}: ${routeUrl}`] : []),
       ].join('\n') });
     } catch { setShareError('No se pudo compartir la ruta. Inténtalo de nuevo.'); }
   }
@@ -167,12 +170,14 @@ export function SavedRouteDetail({ route, back }: { route: RouteData; back: () =
   async function shareRoute() {
     setShareError('');
     try {
+      const routeUrl = getRouteShareUrl(route.id, route.visibility);
       await Share.share({ message: [
         `Ruta: ${route.name || 'Ruta de Trekking'}`,
         `Distancia: ${(route.distance / 1000).toFixed(2)} km`,
         `Duración: ${formatElapsed(route.elapsed)}`,
         `Dificultad: ${route.difficulty}`,
         ...(route.description.trim() ? [`Descripción: ${route.description}`] : []),
+        ...(routeUrl ? [`${getRouteShareLinkLabel(routeUrl)}: ${routeUrl}`] : []),
       ].join('\n') });
     } catch { setShareError('No se pudo compartir la ruta. Inténtalo de nuevo.'); }
   }
