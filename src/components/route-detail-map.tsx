@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import RouteMap from '@/components/route-map';
+import { LoadingState } from '@/components/feedback/trekking-animations';
 import { getRouteMapData, type RouteMapData } from '@/lib/routes';
 
 const EMPTY_MAP: RouteMapData = { trackPoints: [], routePoints: [] };
@@ -22,7 +23,7 @@ export function RouteDetailMap({ routeId }: { routeId: string }) {
   const loading = state.routeId !== routeId || (!state.data && !state.error);
   const mapData = state.routeId === routeId ? state.data ?? EMPTY_MAP : EMPTY_MAP;
   const error = state.routeId === routeId ? state.error : undefined;
-  if (loading) return <View style={{ minHeight: 160, justifyContent: 'center' }}><Text>Cargando mapa...</Text></View>;
+  if (loading) return <LoadingState label="Cargando mapa…" />;
   if (error) return <View style={{ minHeight: 160, justifyContent: 'center' }}><Text accessibilityRole="alert">{error}</Text></View>;
   if (!mapData.trackPoints.length) return <View style={{ minHeight: 160, justifyContent: 'center' }}><Text>Esta ruta todavía no tiene coordenadas.</Text></View>;
 

@@ -9,6 +9,7 @@ import { loadLocalRoutes, loadOfflineRoutes, saveOfflineRoute, removeOfflineRout
 import { refreshRoutes } from '../lib/cloud-routes';
 import { Action, Choices, Input, ui } from './route-controls';
 import RouteMap from './route-map';
+import { LoadingState } from './feedback/trekking-animations';
 
 type Recorder = ReturnType<typeof useRecording>;
 const types: Record<string, string> = { Campamento: 'campamento', Descanso: 'descanso', Agua: 'agua', Tienda: 'tienda', Otro: 'otro' };
@@ -42,7 +43,7 @@ export function PointForm({ recording, back }: { recording: Recorder; back: () =
     <Text style={ui.label}>Servicios disponibles</Text><Choices values={Object.keys(services)} selected={selected} onSelect={value => setSelected(toggle(selected, value))} multiple />
     <Text style={ui.muted}>{recording.location ? `${recording.location.latitude.toFixed(6)}, ${recording.location.longitude.toFixed(6)}` : 'Sin ubicacion'}</Text>
     {!!error && <Text accessibilityRole="alert" style={ui.error}>{error}</Text>}
-    <Action label={busy ? 'Guardando punto...' : 'Guardar punto'} disabled={busy} onPress={() => void save()} />
+    <Action label={busy ? 'Guardando punto...' : 'Guardar punto'} loading={busy} onPress={() => void save()} />
     <Action label="Continuar sin agregar" disabled={busy} onPress={back} />
   </View>;
 }
@@ -76,7 +77,7 @@ export function FinishForm({ recording, done }: { recording: Recorder; done: () 
         `Duración: ${formatElapsed(data.elapsed)}`,
         `Dificultad: ${difficulty}`,
         ...(description.trim() ? [`Descripción: ${description.trim()}`] : []),
-      ].join('\\n') });
+      ].join('\n') });
     } catch { setShareError('No se pudo compartir la ruta. Inténtalo de nuevo.'); }
   }
   return <View style={ui.content}>
@@ -98,12 +99,13 @@ export function FinishForm({ recording, done }: { recording: Recorder; done: () 
           {!!shareError && <Text accessibilityRole="alert" style={ui.error}>{shareError}</Text>}
           <Action label="Continuar a Mis rutas" onPress={done} />
         </>
-      : <Action label={busy ? 'Guardando ruta...' : 'Guardar ruta'} disabled={busy} onPress={() => void save()} />}
+      : <Action label={busy ? 'Guardando ruta...' : 'Guardar ruta'} loading={busy} onPress={() => void save()} />}
   </View>;
 }
 
 export function SavedRoutes({ ownerId, open, create, message }: { ownerId: string | null; open: (route: RouteData) => void; create: () => void; message: string }) {
   const [routes, setRoutes] = useState<RouteData[]>([]), [filter, setFilter] = useState('Todas'), [error, setError] = useState('');
+  const [loadedOwner, setLoadedOwner] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     let alive = true;
     let downloads: RouteData[] = [];
@@ -115,9 +117,9 @@ export function SavedRoutes({ ownerId, open, create, message }: { ownerId: strin
       downloads = offline;
       if (alive) setRoutes(offline);
       return loadLocalRoutes(ownerId);
-    }).then(local => { if (alive) setRoutes(merge(local, downloads)); })
+    }).then(local => { if (alive) { setRoutes(merge(local, downloads)); setLoadedOwner(ownerId); } })
       .then(() => refreshRoutes(ownerId)).then(updated => { if (alive) setRoutes(merge(updated, downloads)); })
-      .catch(() => { if (alive) setError('Mostrando copia local. Sincronizacion pendiente.'); });
+      .catch(() => { if (alive) { setLoadedOwner(ownerId); setError('Mostrando copia local. Sincronizacion pendiente.'); } });
     return () => { alive = false; };
   }, [ownerId]);
   return <View style={ui.content}>
@@ -134,20 +136,21 @@ export function SavedRoutes({ ownerId, open, create, message }: { ownerId: strin
         <Text style={ui.muted}>{route.status === 'finished' ? 'Finalizada' : 'Continuar recorrido'} · {pending ? 'Pendiente de sincronizar' : 'Sincronizada'} · {route.visibility === 'public' ? 'Publica' : 'Privada'}</Text>
       </Pressable>
     );})}
-    {!routes.length && <Text style={ui.muted}>Todavia no tienes rutas guardadas.</Text>}
+    {loadedOwner !== ownerId && !routes.length && <LoadingState label="Cargando tus rutas…" />}
+    {loadedOwner === ownerId && !routes.length && <Text style={ui.muted}>Todavia no tienes rutas guardadas.</Text>}
     <Action label="Grabar ruta" onPress={create} />
   </View>;
 }
 export function SavedRouteDetail({ route, back }: { route: RouteData; back: () => void }) {
   const [downloaded, setDownloaded] = useState(false), [offlineBusy, setOfflineBusy] = useState(true), [offlineError, setOfflineError] = useState('');
+  const [checkedRouteId, setCheckedRouteId] = useState<string | null>(null);
   const offlineOperation = useRef(false);
   useEffect(() => {
     let alive = true;
-    setDownloaded(false); setOfflineBusy(true); setOfflineError('');
     loadOfflineRoutes(route.ownerId)
       .then(routes => { if (alive) setDownloaded(routes.some(item => item.id === route.id)); })
       .catch(() => { if (alive) setOfflineError('No se pudo comprobar la descarga.'); })
-      .finally(() => { if (alive) setOfflineBusy(false); });
+      .finally(() => { if (alive) { setCheckedRouteId(route.id); setOfflineBusy(false); } });
     return () => { alive = false; };
   }, [route.id, route.ownerId]);
   async function toggleDownload() {
@@ -177,7 +180,7 @@ export function SavedRouteDetail({ route, back }: { route: RouteData; back: () =
     <Action label="Compartir ruta" onPress={() => void shareRoute()} />
     {!!shareError && <Text accessibilityRole="alert" style={ui.error}>{shareError}</Text>}
     {downloaded && <Text accessibilityLiveRegion="polite" style={ui.muted}>Disponible offline</Text>}
-    <Action label={downloaded ? 'Eliminar descarga' : 'Descargar para usar offline'} disabled={offlineBusy} onPress={() => void toggleDownload()} />
+    <Action label={checkedRouteId !== route.id ? 'Comprobando descarga...' : offlineBusy ? (downloaded ? 'Eliminando descarga...' : 'Guardando descarga...') : downloaded ? 'Eliminar descarga' : 'Descargar para usar offline'} loading={offlineBusy || checkedRouteId !== route.id} onPress={() => void toggleDownload()} />
     <Text style={ui.muted}>La descarga incluye datos y trazado GPS. No incluye mapa base ni fotos.</Text>
     {!!offlineError && <Text accessibilityRole="alert" style={ui.error}>{offlineError}</Text>}
     <Text>{(route.distance / 1000).toFixed(2)} km · {formatElapsed(route.elapsed)} · {route.difficulty}</Text>

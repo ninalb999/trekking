@@ -43,9 +43,9 @@ export function useRecording(ownerId: string | null) {
     setSaveStatus('Copia local guardada');
     if (cloud && data.ownerId && !cloudBusy.current && (data.status !== 'finished' || data.name.trim())) {
       cloudBusy.current = true;
-      try { await syncRoute(data); setSaveStatus('Guardado local y en Supabase'); }
-      catch { setSaveStatus('Guardado local. Sincronizacion pendiente.'); }
-      finally { cloudBusy.current = false; }
+      void syncRoute(data).then(() => setSaveStatus('Guardado local y en Supabase'))
+        .catch(() => setSaveStatus('Guardado local. Sincronizacion pendiente.'))
+        .finally(() => { cloudBusy.current = false; });
     } else if (!data.ownerId) setSaveStatus('Guardado local. Inicia sesion para sincronizar.');
   };
   const autosave = (cloud = false) => void persist(cloud).catch(() => setSaveStatus('No se pudo guardar la copia local. Revisa el espacio disponible.'));

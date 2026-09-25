@@ -2,6 +2,7 @@ import { Image, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'rea
 import { useState } from 'react';
 
 import RouteMap from '@/components/route-map';
+import { LoadingState } from '@/components/feedback/trekking-animations';
 import { RouteDetailMap } from '@/components/route-detail-map';
 import { useRouteDetail } from '@/hooks/use-route-detail';
 import { formatDistance, formatDuration, type PublicRouteDetail } from '@/lib/public-routes';
@@ -14,7 +15,7 @@ type DetalleRutaProps = {
 export default function DetalleRuta({ routeId, onBack }: DetalleRutaProps) {
   const { state, retry } = useRouteDetail(routeId);
 
-  if (state.status === 'loading') return <StatusCard title="Cargando ruta…" onBack={onBack} />;
+  if (state.status === 'loading') return <StatusCard title="Cargando ruta…" loading onBack={onBack} />;
   if (state.status === 'invalid-id') return <StatusCard title="Identificador de ruta inválido" onBack={onBack} />;
   if (state.status === 'unavailable') return <StatusCard title="Ruta no disponible" copy="Puede que no exista o que no esté publicada." onBack={onBack} />;
   if (state.status === 'error') return <StatusCard title={state.message} onBack={onBack} onRetry={retry} />;
@@ -88,10 +89,10 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   return <View style={styles.panel}><Text accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>{children}</View>;
 }
 
-function StatusCard({ title, copy, onBack, onRetry }: { title: string; copy?: string; onBack: () => void; onRetry?: () => void }) {
+function StatusCard({ title, copy, onBack, onRetry, loading = false }: { title: string; copy?: string; onBack: () => void; onRetry?: () => void; loading?: boolean }) {
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
     <View style={styles.header}><BackButton onPress={onBack} /><Text accessibilityRole="header" style={styles.headerTitle}>Detalle de ruta</Text></View>
-    <View style={styles.statusCard}><Text accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>{!!copy && <Text style={styles.description}>{copy}</Text>}{!!onRetry && <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retryButton}><Text style={styles.retryText}>Reintentar</Text></Pressable>}</View>
+    <View style={styles.statusCard}>{loading ? <LoadingState label={title} /> : <Text accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>}{!!copy && <Text style={styles.description}>{copy}</Text>}{!!onRetry && <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retryButton}><Text style={styles.retryText}>Reintentar</Text></Pressable>}</View>
   </ScrollView>;
 }
 

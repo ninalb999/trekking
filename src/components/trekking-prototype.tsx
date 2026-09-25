@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Image,
+  Modal,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -26,6 +28,7 @@ import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import {
   formatDistance,
   formatDuration,
+  getPublicRouteDetail,
   listPublicRoutes,
   type PublicRouteSummary,
 } from '@/lib/public-routes';
@@ -37,6 +40,9 @@ import {
   type ProfileImageSelection,
 } from '@/lib/profile-images';
 import { getRouteMainImageUrl } from '@/lib/route-detail';
+import { loadOfflineRoutes, saveOfflineRoute } from '@/lib/local-routes';
+import { toSavedPublicRoute } from '@/lib/saved-public-routes';
+import { LoadingState, LoginWelcome, TrailSpinner } from './feedback/trekking-animations';
 
 type ScreenId = AuthScreen;
 
@@ -59,6 +65,8 @@ export function TrekkingPrototype() {
   const [authenticated, setAuthenticated] = useState(false);
   const [sessionFeedback, setSessionFeedback] = useState('');
   const [notice, setNotice] = useState('');
+  const [showWelcome, setShowWelcome] = useState(false);
+  const dismissWelcome = useCallback(() => setShowWelcome(false), []);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const phoneWidth = Math.min(width, 430);
@@ -91,6 +99,7 @@ export function TrekkingPrototype() {
     const applyAuthEvent = (event: string, hasSession: boolean) => {
       if (!active) return;
       setAuthenticated(hasSession);
+      if (!hasSession) setShowWelcome(false);
       setCurrentScreen(current => {
         const next = screenAfterAuthEvent(event, hasSession, current);
         if (next === 'home' && next !== current) setActiveTab('Inicio');
@@ -157,8 +166,8 @@ export function TrekkingPrototype() {
           contentContainerStyle={{ paddingBottom: isAuth ? insets.bottom + 16 : 16 }}
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="never">
-        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} onSignOut={logOut} sessionFeedback={sessionFeedback} onNotice={showNotice} />}
-        {screen === 'login' && <LoginScreen navigate={setScreen} onNotice={showNotice} />}
+        {screen === 'home' && <HomeScreen navigate={setScreen} authenticated={authenticated} ownerId={ownerId} onSignOut={logOut} sessionFeedback={sessionFeedback} onNotice={showNotice} />}
+        {screen === 'login' && <LoginScreen navigate={setScreen} onSuccess={() => setShowWelcome(true)} />}
         {screen === 'register' && <RegisterScreen navigate={setScreen} onNotice={showNotice} />}
         {screen === 'routes' && <SavedRoutes ownerId={ownerId} message={recording.saveStatus} create={() => setScreen('record')} open={route => {
           if (route.status !== 'finished' || !route.name) { recording.restore(route); setScreen(route.status === 'finished' ? 'finish' : 'record'); }
@@ -176,6 +185,7 @@ export function TrekkingPrototype() {
           </View>
         )}
       </View>
+      {showWelcome && <LoginWelcome onDismiss={dismissWelcome} />}
     </View>
   );
 }
@@ -225,9 +235,10 @@ function Hero({ title, subtitle, center }: { title: string; subtitle: string; ce
   );
 }
 
-function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback, onNotice }: {
+function HomeScreen({ navigate, authenticated, ownerId, onSignOut, sessionFeedback, onNotice }: {
   navigate: (screen: ScreenId) => void;
   authenticated: boolean;
+  ownerId: string | null;
   onSignOut: () => void;
   sessionFeedback: string;
   onNotice: (message: string) => void;
@@ -289,9 +300,18 @@ function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback, onNot
           <FilterPill label="Experto" tone="red" active={difficulty === 'Experto'} onPress={() => setDifficulty(difficulty === 'Experto' ? '' : 'Experto')} />
         </View>
         {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
-        {loading && <Text selectable style={styles.formCopy}>Cargando rutas publicas...</Text>}
+        {loading && <LoadingState label="Cargando rutas públicas…" />}
         {!loading && routes.map((route, index) => (
-          <RouteCard key={route.id} route={route} index={index} onPress={() => open(route)} />
+          <RouteCard
+            key={route.id}
+            route={route}
+            index={index}
+            authenticated={authenticated}
+            ownerId={ownerId}
+            onPress={() => open(route)}
+            onRequireAuth={() => navigate('login')}
+            onNotice={onNotice}
+          />
         ))}
         {!loading && !routes.length && <Text selectable style={styles.formCopy}>No hay rutas publicas con esos filtros.</Text>}
         <PrimaryButton label="Grabar ruta" icon="+" onPress={goRecord} />
@@ -300,7 +320,7 @@ function HomeScreen({ navigate, authenticated, onSignOut, sessionFeedback, onNot
   );
 }
 
-function LoginScreen({ navigate, onNotice }: { navigate: (screen: ScreenId) => void; onNotice: (message: string) => void }) {
+function LoginScreen({ navigate, onSuccess }: { navigate: (screen: ScreenId) => void; onSuccess: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -325,7 +345,7 @@ function LoginScreen({ navigate, onNotice }: { navigate: (screen: ScreenId) => v
             : error.message);
         return;
       }
-      if (data.session) { onNotice('Inicio de sesión correcto.'); navigate('home'); }
+      if (data.session) { onSuccess(); navigate('home'); }
     } catch {
       setFeedback('No se pudo iniciar sesión. Inténtalo de nuevo.');
     } finally {
@@ -355,7 +375,7 @@ function LoginScreen({ navigate, onNotice }: { navigate: (screen: ScreenId) => v
             ¿Olvidaste tu contraseña?
           </Text>
           {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
-          <PrimaryButton label={loading ? 'Ingresando...' : 'Ingresar'} suffix="→" onPress={login} disabled={loading} />
+          <PrimaryButton label={loading ? 'Ingresando...' : 'Ingresar'} suffix="→" onPress={login} loading={loading} />
           <Divider />
           <SecondaryButton label="¿No tienes cuenta? Regístrate" onPress={() => navigate('register')} />
           <SecondaryButton label="Continuar sin cuenta" onPress={() => navigate('home')} />
@@ -488,7 +508,7 @@ function RegisterScreen({ navigate, onNotice }: { navigate: (screen: ScreenId) =
         </Text>
         <Field text="Confirmar contraseña" value={confirmation} onChangeText={setConfirmation} secure maxLength={64} />
         {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
-        <PrimaryButton label={loading ? 'Registrando...' : 'Registrarme'} onPress={register} disabled={loading} />
+        <PrimaryButton label={loading ? 'Registrando...' : 'Registrarme'} onPress={register} loading={loading} />
         <Text selectable onPress={() => navigate('login')} style={styles.centerLink}>
           Ya tienes una cuenta? <Text style={styles.linkStrong}>Iniciar sesion</Text>
         </Text>
@@ -541,7 +561,9 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
           accessibilityLabel={active ? 'Pausar ruta' : track.status === 'paused' ? 'Continuar ruta' : 'Iniciar grabacion'}
           disabled={busy}
           onPress={active ? pause : () => void begin()}
-          style={({ pressed }) => [styles.recordAction, busy && styles.disabled, pressed && styles.pressed]}>
+          accessibilityState={{ busy, disabled: busy }}
+          style={({ pressed }) => [styles.recordAction, pressed && styles.pressed]}>
+          {busy && <TrailSpinner light />}
           <Text style={styles.recordActionText}>{busy ? 'Buscando GPS...' : active ? 'Pausar ruta' : track.status === 'paused' ? 'Continuar ruta' : 'Iniciar grabacion'}</Text>
         </Pressable>
         <RouteMap
@@ -862,19 +884,84 @@ function FilterPill({ label, tone, active, onPress }: { label: string; tone: str
   );
 }
 
-function RouteCard({ route, index, onPress }: { route: PublicRouteSummary; index: number; onPress?: () => void }) {
+function RouteCard({ route, index, onPress, authenticated, ownerId, onRequireAuth, onNotice }: {
+  route: PublicRouteSummary;
+  index: number;
+  onPress?: () => void;
+  authenticated: boolean;
+  ownerId: string | null;
+  onRequireAuth: () => void;
+  onNotice: (message: string) => void;
+}) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState('');
   useEffect(() => {
     let active = true;
     if (!route.imagePath) {
-      setImageUrl(null);
       return () => { active = false; };
     }
     getRouteMainImageUrl(route.imagePath).then(url => { if (active) setImageUrl(url); }).catch(() => { if (active) setImageUrl(null); });
     return () => { active = false; };
   }, [route.imagePath]);
+
+  useEffect(() => {
+    let active = true;
+    if (!authenticated || !ownerId) {
+      return () => { active = false; };
+    }
+    loadOfflineRoutes(ownerId)
+      .then(routes => { if (active) setSaved(routes.some(savedRoute => savedRoute.id === route.id)); })
+      .catch(() => { if (active) setSaved(false); });
+    return () => { active = false; };
+  }, [authenticated, ownerId, route.id]);
+
+  const shareRoute = async () => {
+    try {
+      await Share.share({
+        message: [
+          `Ruta: ${route.name}`,
+          `Por: ${route.ownerName}`,
+          `Distancia: ${formatDistance(route.distanceMeters)}`,
+          `Duración: ${formatDuration(route.durationSeconds)}`,
+          `Dificultad: ${route.difficulty}`,
+          route.description.trim() ? `Descripción: ${route.description.trim()}` : '',
+        ].filter(Boolean).join('\n'),
+      });
+      setFeedback('Ruta lista para compartir.');
+    } catch {
+      setFeedback('No se pudo compartir la ruta.');
+    }
+  };
+
+  const savePublicRoute = async () => {
+    if (!authenticated || !ownerId) {
+      setModalVisible(false);
+      onNotice('Inicia sesión para guardar rutas públicas en Mis rutas.');
+      onRequireAuth();
+      return;
+    }
+    if (saved || saving) return;
+    setSaving(true);
+    setFeedback('');
+    try {
+      const detail = await getPublicRouteDetail(route.id);
+      if (!detail) throw new Error('Ruta no encontrada');
+      await saveOfflineRoute(toSavedPublicRoute(detail, ownerId));
+      setSaved(true);
+      setFeedback('Ruta guardada en Mis rutas.');
+    } catch {
+      setFeedback('No se pudo guardar la ruta. Revisa tu conexión e inténtalo de nuevo.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.routeCard, pressed && styles.pressed]}>
+    <>
+    <Pressable onPress={() => setModalVisible(true)} style={({ pressed }) => [styles.routeCard, pressed && styles.pressed]}>
       {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.routeThumb} /> : <Photo seed={index} />}
       <View style={styles.flex}>
         <Text selectable style={styles.routeTitle}>
@@ -894,6 +981,29 @@ function RouteCard({ route, index, onPress }: { route: PublicRouteSummary; index
       </View>
       <Pill label={route.difficulty} tone={route.difficulty === 'Experto' ? 'red' : route.difficulty === 'Intermedio' ? 'blue' : 'green'} small />
     </Pressable>
+    <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+      <View style={styles.routeModalBackdrop}>
+        <View style={styles.routeModal}>
+          <View style={styles.rowBetween}>
+            <Text selectable style={styles.routeModalTitle}>{route.name}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Cerrar" onPress={() => setModalVisible(false)}>
+              <Text style={styles.routeModalClose}>×</Text>
+            </Pressable>
+          </View>
+          <Text selectable style={styles.routeModalCopy}>{route.description || 'Ruta pública de la comunidad.'}</Text>
+          <View style={styles.routeModalStats}>
+            <Text selectable style={styles.metaText}>{formatDistance(route.distanceMeters)}</Text>
+            <Text selectable style={styles.metaText}>{formatDuration(route.durationSeconds)}</Text>
+            <Text selectable style={styles.metaText}>{route.pointCount} puntos</Text>
+          </View>
+          {!!feedback && <Text selectable accessibilityRole="alert" style={styles.formFeedback}>{feedback}</Text>}
+          <PrimaryButton label="Ver detalle" onPress={() => { setModalVisible(false); onPress?.(); }} />
+          <SecondaryButton label="Compartir ruta" onPress={shareRoute} />
+          <SecondaryButton label={authenticated && ownerId && saved ? 'Guardada en Mis rutas' : saving ? 'Guardando...' : 'Guardar en Mis rutas'} loading={saving} disabled={authenticated && ownerId ? saved : false} onPress={savePublicRoute} />
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -952,6 +1062,7 @@ function PrimaryButton({
   flex,
   onPress,
   disabled,
+  loading = false,
 }: {
   label: string;
   icon?: string;
@@ -959,10 +1070,12 @@ function PrimaryButton({
   flex?: boolean;
   onPress?: () => void;
   disabled?: boolean;
+  loading?: boolean;
 }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.primary, flex && styles.flex, disabled && styles.disabled, pressed && styles.pressed]}>
-      {icon && (
+    <Pressable accessibilityRole="button" accessibilityState={{ disabled: disabled || loading, busy: loading }} disabled={disabled || loading} onPress={onPress} style={({ pressed }) => [styles.primary, flex && styles.flex, disabled && styles.disabled, pressed && styles.pressed]}>
+      {loading && <TrailSpinner light />}
+      {!loading && icon && (
         <Text selectable style={styles.primaryIcon}>
           {icon}
         </Text>
@@ -970,7 +1083,7 @@ function PrimaryButton({
       <Text selectable style={styles.primaryText}>
         {label}
       </Text>
-      {suffix && (
+      {!loading && suffix && (
         <Text selectable style={styles.primaryIcon}>
           {suffix}
         </Text>
@@ -979,10 +1092,11 @@ function PrimaryButton({
   );
 }
 
-function SecondaryButton({ label, icon, flex, onPress }: { label: string; icon?: string; flex?: boolean; onPress?: () => void }) {
+function SecondaryButton({ label, icon, flex, onPress, disabled, loading = false }: { label: string; icon?: string; flex?: boolean; onPress?: () => void; disabled?: boolean; loading?: boolean }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.secondary, flex && styles.flex, pressed && styles.pressed]}>
-      {icon && (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: disabled || loading, busy: loading }} disabled={disabled || loading} onPress={onPress} style={({ pressed }) => [styles.secondary, flex && styles.flex, disabled && styles.disabled, pressed && styles.pressed]}>
+      {loading && <TrailSpinner />}
+      {!loading && icon && (
         <Text selectable style={styles.secondaryIcon}>
           {icon}
         </Text>
@@ -1290,6 +1404,12 @@ const styles = StyleSheet.create({
   metaText: { color: '#17201c', fontSize: 13, fontWeight: '800' },
   heart: { color: '#111a18', fontSize: 24, fontWeight: '700' },
   routeThumb: { width: 76, height: 76, borderRadius: 38, backgroundColor: '#dce8d7' },
+  routeModalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(7, 25, 17, 0.42)' },
+  routeModal: { padding: 20, gap: 12, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
+  routeModalTitle: { flex: 1, color: '#073d2d', fontSize: 24, fontWeight: '900' },
+  routeModalClose: { color: '#52605a', fontSize: 32, lineHeight: 32, fontWeight: '700' },
+  routeModalCopy: { color: '#58655f', fontSize: 15, lineHeight: 21 },
+  routeModalStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, paddingVertical: 4 },
   photo: { width: 112, height: 72, borderRadius: 11, overflow: 'hidden', backgroundColor: '#8cc5df' },
   photoTall: { width: 104, height: 124 },
   photoWide: { flex: 1, height: 96 },
@@ -1391,7 +1511,7 @@ const styles = StyleSheet.create({
   ownedCard: { flexDirection: 'row', gap: 12, padding: 10, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e8ece8' },
   detailButton: { minHeight: 36, marginTop: 8, paddingHorizontal: 14, borderRadius: 18, backgroundColor: '#f0f2f1', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   detailButtonText: { color: '#26322e', fontSize: 14, fontWeight: '800' },
-  recordAction: { minHeight: 48, marginTop: 12, marginBottom: 12, paddingHorizontal: 18, borderRadius: 24, backgroundColor: '#1f6a43', alignItems: 'center', justifyContent: 'center', shadowColor: '#123f2d', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  recordAction: { minHeight: 48, marginTop: 12, marginBottom: 12, paddingHorizontal: 18, borderRadius: 24, backgroundColor: '#1f6a43', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, shadowColor: '#123f2d', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   recordActionText: { color: '#fff', fontSize: 15, fontWeight: '900' },
   banner: { minHeight: 70, padding: 14, borderRadius: 18, backgroundColor: '#eaf4ed', flexDirection: 'row', alignItems: 'center', gap: 12 },
   liveDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#16814f' },
