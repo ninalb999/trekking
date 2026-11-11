@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -85,6 +86,7 @@ export function TrekkingPrototype() {
       setCurrentScreen('login');
       return;
     }
+    if (next !== 'record' && recording.locating) recording.cancelLocate();
     if (screen === 'point' && next === 'record' && recording.track.status === 'paused') void recording.begin();
     if (next !== 'record' && (recording.track.status === 'recording' || recording.busy)) recording.pause();
     if (next === 'home') setActiveTab('Inicio');
@@ -534,7 +536,7 @@ function MyRoutesScreen({ navigate }: { navigate: (screen: ScreenId) => void }) 
 }
 
 function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId) => void; recording: ReturnType<typeof useRecording> }) {
-  const { track, busy, error, begin, pause, finish, elapsed } = recording;
+  const { track, busy, locating, locate, error, begin, pause, finish, elapsed } = recording;
   const active = track.status === 'recording';
   return (
     <>
@@ -560,9 +562,9 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={active ? 'Pausar ruta' : track.status === 'paused' ? 'Continuar ruta' : 'Iniciar grabacion'}
-          disabled={busy}
+          disabled={busy || locating}
           onPress={active ? pause : () => void begin()}
-          accessibilityState={{ busy, disabled: busy }}
+          accessibilityState={{ busy, disabled: busy || locating }}
           style={({ pressed }) => [styles.recordAction, pressed && styles.pressed]}>
           {busy && <TrailSpinner light />}
           <Text style={styles.recordActionText}>{busy ? 'Buscando GPS...' : active ? 'Pausar ruta' : track.status === 'paused' ? 'Continuar ruta' : 'Iniciar grabacion'}</Text>
@@ -573,6 +575,9 @@ function RecordingScreen({ navigate, recording }: { navigate: (screen: ScreenId)
           places={recording.places}
         />
         <Text style={styles.formCopy}>{recording.quality}</Text>
+        {!active && <View style={styles.locateAction}>
+          <SecondaryButton label={locating ? 'Buscando ubicación...' : 'Ubicarme en el mapa'} onPress={() => void locate()} disabled={busy} loading={locating} />
+        </View>}
         {!!recording.saveStatus && <Text style={styles.formCopy}>{recording.saveStatus}</Text>}
         {!!error && <Text accessibilityRole="alert" style={styles.formCopy}>{error}</Text>}
         {(active || track.status === 'paused') && <>
@@ -1514,8 +1519,9 @@ const styles = StyleSheet.create({
   ownedCard: { flexDirection: 'row', gap: 12, padding: 10, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e8ece8' },
   detailButton: { minHeight: 36, marginTop: 8, paddingHorizontal: 14, borderRadius: 18, backgroundColor: '#f0f2f1', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   detailButtonText: { color: '#26322e', fontSize: 14, fontWeight: '800' },
-  recordAction: { minHeight: 48, marginTop: 12, marginBottom: 12, paddingHorizontal: 18, borderRadius: 24, backgroundColor: '#1f6a43', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, shadowColor: '#123f2d', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  recordAction: { minHeight: 48, marginTop: 12, marginBottom: 12, paddingHorizontal: 18, borderRadius: 24, backgroundColor: '#1f6a43', alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, ...Platform.select({ web: { boxShadow: '0px 3px 8px rgba(18, 63, 45, 0.16)' }, default: { shadowColor: '#123f2d', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 } }) },
   recordActionText: { color: '#fff', fontSize: 15, fontWeight: '900' },
+  locateAction: { marginTop: 8, marginBottom: 4 },
   banner: { minHeight: 70, padding: 14, borderRadius: 18, backgroundColor: '#eaf4ed', flexDirection: 'row', alignItems: 'center', gap: 12 },
   liveDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#16814f' },
   bannerTitle: { color: '#155136', fontSize: 16, fontWeight: '900' },

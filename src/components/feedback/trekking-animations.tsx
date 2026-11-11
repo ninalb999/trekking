@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo, Animated, AppState, Easing, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Animated, AppState, Easing, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 // The same forest, sage, cream and sand colors used by the route cards.
@@ -25,7 +25,7 @@ function useMotionAllowed() {
 
 /** Native SVG artwork: no remote images, GIFs or network access required. */
 export function TrailIllustration() {
-  return <Svg width="100%" height="100%" viewBox="0 0 240 160" accessible={false}>
+  return <Svg width="100%" height="100%" viewBox="0 0 240 160" accessible={Platform.OS === 'web' ? undefined : false} aria-hidden={Platform.OS === 'web' ? true : undefined}>
     <Circle cx="120" cy="80" r="76" fill={colors.mint} />
     <Circle cx="164" cy="40" r="14" fill={colors.sand} />
     <Path d="M24 115 85 37 137 115Z" fill={colors.sage} />
@@ -49,12 +49,12 @@ export function TrailSpinner({ size = 22, light = false }: { size?: number; ligh
     progress.setValue(0);
     if (!motionAllowed) return;
     const animation = Animated.loop(Animated.timing(progress, {
-      toValue: 1, duration: 1500, easing: Easing.linear, useNativeDriver: true, isInteraction: false,
+      toValue: 1, duration: 1500, easing: Easing.linear, useNativeDriver: Platform.OS !== 'web', isInteraction: false,
     }));
     animation.start();
     return () => animation.stop();
   }, [motionAllowed, progress]);
-  return <View style={{ width: size, height: size }} pointerEvents="none" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+  return <View style={{ width: size, height: size, pointerEvents: 'none' }} accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
     <Svg width={size} height={size} viewBox="0 0 40 40">
       <Circle cx="20" cy="20" r="16" fill="none" stroke={ink} strokeOpacity={0.2} strokeWidth="3" />
       <Path d="m10 26 7-12 5 8 3-4 6 8Z" fill="none" stroke={ink} strokeWidth="2" strokeLinejoin="round" />
@@ -83,7 +83,7 @@ export function LoginWelcome({ onDismiss }: { onDismiss: () => void }) {
     if (!motionAllowed) { entrance.setValue(1); return; }
     entrance.setValue(0);
     const animation = Animated.timing(entrance, {
-      toValue: 1, duration: 650, easing: Easing.out(Easing.cubic), useNativeDriver: true, isInteraction: false,
+      toValue: 1, duration: 650, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web', isInteraction: false,
     });
     animation.start();
     return () => animation.stop();

@@ -6,7 +6,7 @@ export const mapDocument = `<!doctype html><html><head><meta name="viewport" con
 <body><div id="map"></div><button id="center" aria-label="Centrar mi ubicacion">Centrar</button><div id="message" role="status"></div>
 <script>${leafletJs.replace(/<\/script/gi, '<\\/script')}</script><script>
 const map=L.map('map',{maxZoom:20}).setView([-16.5,-68.15],12), layer=L.layerGroup().addTo(map);
-let following=true,lastLocation=null,lastKey='',baseLayer=null,activeOfflineRegion=null;
+let following=true,automaticMove=false,lastLocation=null,lastKey='',baseLayer=null,activeOfflineRegion=null;
 const tileCache=new Map(),tileRequests=new Map();
 const message=document.getElementById('message');
 const onlineTiles=()=>L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{subdomains:'abc',maxZoom:20,maxNativeZoom:17,attribution:'Mapas &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA) &mdash; Datos &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'})
@@ -37,8 +37,9 @@ window.receiveTileResponse=function(response){
 };
 setBaseLayer(null);
 map.on('dragstart',()=>following=false);
-map.on('zoomstart',()=>following=false);
-document.getElementById('center').onclick=()=>{following=true;if(lastLocation)map.setView(lastLocation,16);};
+map.on('zoomstart',()=>{if(!automaticMove)following=false;});
+function moveMap(action){automaticMove=true;try{action();}finally{automaticMove=false;}}
+document.getElementById('center').onclick=()=>{following=true;if(lastLocation)moveMap(()=>map.setView(lastLocation,16,{animate:false}));};
 function clean(value){return String(value||'').replace(/[<>&"]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));}
 function placeType(value){return ({campamento:'Campamento',descanso:'Descanso',agua:'Agua',tienda:'Tienda',otro:'Otro'}[value]||value||'Punto');}
 function popupFor(place){
@@ -64,8 +65,8 @@ window.updateRoute=function(data){
   const current=data.location||(data.points||[]).slice(-1)[0];
   if(current){lastLocation=[current.latitude,current.longitude];L.circleMarker(lastLocation,{radius:7,color:'#2675ef'}).addTo(layer);
     if(current.accuracy>0)L.circle(lastLocation,{radius:current.accuracy,weight:1,color:'#2675ef',fillOpacity:0.08}).addTo(layer);
-    if(following && !data.overview)map.setView(lastLocation,current.accuracy>1000?12:16);}
-  if(data.overview && following && data.points.length)map.fitBounds(data.points.map(p=>[p.latitude,p.longitude]),{padding:[25,25],maxZoom:18});
+    if(following && !data.overview)moveMap(()=>map.setView(lastLocation,current.accuracy>1000?12:16,{animate:false}));}
+  if(data.overview && following && data.points.length)moveMap(()=>map.fitBounds(data.points.map(p=>[p.latitude,p.longitude]),{padding:[25,25],maxZoom:18,animate:false}));
   map.invalidateSize();
 };
 window.addEventListener('message',event=>{if(event.source===parent&&event.data&&event.data.type==='route')window.updateRoute(event.data.data);});

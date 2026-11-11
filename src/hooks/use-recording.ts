@@ -3,9 +3,32 @@ import { AppState, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { randomUUID } from 'expo-crypto';
 import { Recording, type TrackPoint } from '../lib/recording';
+import { locationErrorMessage, normalizeLocation } from '../lib/location';
 import { loadLocalRoutes, saveLocalRoute } from '../lib/local-routes';
 import { syncRoute } from '../lib/cloud-routes';
 import { emptyRoute, validateRoute, type Place, type RouteData } from '../lib/route-data';
+
+async function requireLocationAccess() {
+  if (Platform.OS !== 'web') {
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (!permission.granted) throw new Error('Permite la ubicación en los ajustes del dispositivo para grabar.');
+    if (!await Location.hasServicesEnabledAsync()) throw new Error('Activa los servicios de ubicación del celular.');
+  } else if (!globalThis.isSecureContext || !navigator.geolocation) {
+    throw new Error('La ubicación necesita localhost o una conexión HTTPS.');
+  }
+}
+
+async function previewPosition() {
+  const read = Platform.OS === 'web'
+    ? new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, maximumAge: 0, timeout: 18000 }))
+    : Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High, mayShowUserSettingsDialog: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([read, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('La ubicación tardó demasiado. Revisa los permisos e inténtalo de nuevo.')), 20000);
+    })]);
+  } finally { clearTimeout(timer); }
+}
 
 async function finalPosition(): Promise<Omit<TrackPoint, 'segment'>> {
   const read = Platform.OS === 'web'
@@ -23,10 +46,13 @@ export function useRecording(ownerId: string | null) {
   const meta = useRef<Partial<RouteData>>({});
   const watcher = useRef<(() => void) | null>(null);
   const generation = useRef(0), busyRef = useRef(false), cloudBusy = useRef(false);
-  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [saveStatus, setSaveStatus] = useState('');
+  const previewGeneration = useRef(0), locatingRef = useRef(false);
+  const [busy, setBusy] = useState(false), [locating, setLocating] = useState(false), [error, setError] = useState(''), [saveStatus, setSaveStatus] = useState('');
   const [location, setLocation] = useState<Omit<TrackPoint, 'segment'> | null>(null);
   const [view, setView] = useState({ track: { points: [] as TrackPoint[], distance: 0, status: 'idle' as Recording['status'] }, data: emptyRoute, now: 0 });
   const stop = useCallback(() => { generation.current++; watcher.current?.(); watcher.current = null; }, []);
+  const cancelLocate = useCallback(() => { previewGeneration.current++; locatingRef.current = false; setLocating(false); }, []);
+  useEffect(() => () => { previewGeneration.current++; }, []);
   const snapshot = useCallback((): RouteData => ({
     id: engine.current.id, ownerId: meta.current.ownerId ?? null, name: meta.current.name ?? '', description: meta.current.description ?? '',
     difficulty: meta.current.difficulty ?? 'Novato', visibility: meta.current.visibility ?? 'private', equipment: meta.current.equipment ?? [],
@@ -81,41 +107,50 @@ export function useRecording(ownerId: string | null) {
     });
     return () => { clearInterval(timer); listener.remove(); stop(); };
   }, [stop, update]);
+  const locate = async () => {
+    if (busyRef.current || locatingRef.current || engine.current.status === 'recording') return;
+    locatingRef.current = true; setLocating(true); setError('');
+    const request = ++previewGeneration.current, token = generation.current;
+    try {
+      await requireLocationAccess();
+      const position = await previewPosition();
+      if (request !== previewGeneration.current || token !== generation.current) return;
+      const next = normalizeLocation(position);
+      if (!next) throw new Error('No se recibió una ubicación válida. Inténtalo de nuevo.');
+      setLocation(next); update();
+    } catch (cause) {
+      if (request === previewGeneration.current && token === generation.current) setError(locationErrorMessage(cause, Platform.OS === 'web'));
+    } finally {
+      if (request === previewGeneration.current) { locatingRef.current = false; setLocating(false); }
+    }
+  };
   const begin = async () => {
-    if (busyRef.current || engine.current.status === 'recording') return;
+    if (busyRef.current || locatingRef.current || engine.current.status === 'recording') return;
     busyRef.current = true; setBusy(true); setError(''); stop();
     const token = generation.current;
     try {
-      if (Platform.OS !== 'web') {
-        const permission = await Location.requestForegroundPermissionsAsync();
-        if (!permission.granted) throw new Error('Permite la ubicacion precisa en Ajustes para grabar.');
-        if (!await Location.hasServicesEnabledAsync()) throw new Error('Activa la ubicacion GPS del celular.');
-      } else if (!globalThis.isSecureContext || !navigator.geolocation) {
-        throw new Error('La ubicacion necesita localhost o una conexion HTTPS.');
-      }
+      await requireLocationAccess();
       if (token !== generation.current) return;
       if (engine.current.status === 'paused') engine.current.resume(Date.now());
       else {
         engine.current = new Recording(); engine.current.id = randomUUID();
-        engine.current.start(Date.now()); meta.current = { ownerId, places: [] }; setLocation(null);
+        engine.current.start(Date.now()); meta.current = { ownerId, places: [] };
+        setLocation(current => current && Date.now() - current.timestamp <= 30000 ? current : null);
       }
       const add = (position: { coords: { latitude: number; longitude: number; accuracy: number | null }; timestamp: number }) => {
-        if (token !== generation.current || !Number.isFinite(position.timestamp) || Date.now() - position.timestamp > 30000 || position.timestamp > Date.now() + 5000 ||
-          !Number.isFinite(position.coords.latitude) || Math.abs(position.coords.latitude) > 90 || !Number.isFinite(position.coords.longitude) || Math.abs(position.coords.longitude) > 180) return;
-        const next = { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy, timestamp: position.timestamp };
+        if (token !== generation.current) return;
+        const next = normalizeLocation(position);
+        if (!next) return;
         setLocation(next); engine.current.add(next); setError(''); update();
       };
       const failed = (cause: unknown) => {
         if (token !== generation.current) return;
-        const message = cause && typeof cause === 'object' && 'message' in cause
-          ? String((cause as { message?: unknown }).message)
-          : typeof cause === 'string' ? cause : 'No se pudo recibir la ubicacion del dispositivo.';
-        pause(); setError(message);
+        pause(); setError(locationErrorMessage(cause, Platform.OS === 'web'));
       };
       if (Platform.OS === 'web') {
         const id = navigator.geolocation.watchPosition(add, err => {
-          if (err.code === 1) failed('Acceso bloqueado. Permite Ubicacion en los ajustes del sitio.');
-          else if (token === generation.current) setError('Buscando senal GPS. Se conserva el recorrido.');
+          if (err.code === 1) failed(err);
+          else if (token === generation.current) setError(locationErrorMessage(err, true));
         }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
         watcher.current = () => navigator.geolocation.clearWatch(id);
       } else {
@@ -127,7 +162,7 @@ export function useRecording(ownerId: string | null) {
       }
       autosave(true);
     } catch (cause) {
-      if (token === generation.current) { stop(); engine.current.pause(Date.now()); setError(cause instanceof Error ? cause.message : 'No se pudo iniciar el GPS.'); }
+      if (token === generation.current) { stop(); engine.current.pause(Date.now()); setError(locationErrorMessage(cause, Platform.OS === 'web')); }
     } finally { busyRef.current = false; setBusy(false); update(); }
   };
   const finish = async () => {
@@ -163,10 +198,13 @@ export function useRecording(ownerId: string | null) {
     await persist(true);
   };
   const age = view.now - (location?.timestamp ?? view.data.started);
-  const quality = !location ? (age > 15000 ? 'Sin senal GPS. Buscando ubicacion...' : 'Buscando ubicacion...') :
+  const quality = !location ? (locating ? 'Buscando ubicación...' : view.track.status === 'recording'
+    ? (age > 15000 ? 'Aún no se recibió ubicación. Revisa los permisos del dispositivo.' : 'Buscando ubicación...')
+    : 'Pulsa Ubicarme o inicia la grabación para solicitar tu ubicación.') :
+    view.track.status !== 'recording' ? (location.accuracy === null ? 'Última ubicación obtenida; precisión desconocida.' : `Última ubicación obtenida: +/-${Math.round(location.accuracy)} m.`) :
     age > 15000 ? 'Senal GPS perdida. Distancia detenida.' : location.accuracy === null ? 'Precision desconocida. Distancia detenida.' :
     location.accuracy > 150 ? `Ubicacion aproximada (+/-${Math.round(location.accuracy)} m). Esperando mejor senal para trazar.` :
     location.accuracy > 50 ? `Precision baja (+/-${Math.round(location.accuracy)} m). Recorrido aproximado.` : `Precision GPS: +/-${Math.round(location.accuracy)} m`;
-  return { track: view.track, busy, error, begin, pause, finish, elapsed: view.data.elapsed, location, quality, saveStatus,
+  return { track: view.track, busy, locating, locate, cancelLocate, error, begin, pause, finish, elapsed: view.data.elapsed, location, quality, saveStatus,
     data: view.data, places: view.data.places, addPlace, save, restore };
 }
